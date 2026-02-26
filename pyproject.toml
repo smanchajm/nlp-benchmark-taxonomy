@@ -1,3 +1,11 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["logging_config"]
+
 [project]
 name = "nlp-benchmark-taxonomy"
 version = "0.1.0"

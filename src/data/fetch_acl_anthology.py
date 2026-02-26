@@ -1,12 +1,10 @@
 import logging
-import sys
 from pathlib import Path
 
 from acl_anthology import Anthology
 from acl_anthology.collections.paper import Paper
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).parents[1]))
 from logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
