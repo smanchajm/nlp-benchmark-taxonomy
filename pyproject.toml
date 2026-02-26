@@ -1,0 +1,11 @@
+[project]
+name = "nlp-benchmark-taxonomy"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "acl-anthology>=1.0.0",
+    "pandas>=3.0.1",
+    "pyarrow>=23.0.1",
+]
