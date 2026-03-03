@@ -10,7 +10,7 @@ from logging_config import ROOT, setup_logging
 logger = logging.getLogger(__name__)
 
 INPUT_ACL_OCL_PATH = ROOT / "data/acl-ocl.parquet"
-INPUT_ACL_ANTHOLOGY_PATH = ROOT / "data/anthology_clean.parquet"
+INPUT_ACL_ANTHOLOGY_PATH = ROOT / "data/anthology_filtered.parquet"
 
 
 def fetch_acl_ocl_dataset(output_path: Path = Path("data/acl-ocl.parquet")) -> None:

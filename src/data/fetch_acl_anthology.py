@@ -39,7 +39,19 @@ def fetch_anthology(output_path: Path = Path("data/anthology.parquet")) -> None:
     ]
 
     logger.info("Writing %d papers to %s...", len(records), output_path)
-    pd.DataFrame(records).to_parquet(output_path, index=False)
+    df = pd.DataFrame(records).astype(
+        {
+            "id": "string",
+            "bibkey": "string",
+            "title": "string",
+            "abstract": "string",
+            "year": "Int16",
+            "doi": "string",
+            "url": "string",
+            "language": "string",
+        }
+    )
+    df.to_parquet(output_path, index=False)
     logger.info("Done.")
 
 
