@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
 
+from pathlib import Path
 from datasets import Dataset
 
 
 class BaseModel(ABC):
-    def __init__(self, config: dict):
+    def __init__(self, config):
         self.config = config
 
     @abstractmethod
@@ -20,9 +21,9 @@ class BaseModel(ABC):
         pass
 
     @abstractmethod
-    def save(self, path: str) -> None:
+    def save(self, path: str | Path) -> None:
         pass
 
     @abstractmethod
-    def push_to_hf_hub(self, repo_name: str) -> None:
+    def push_to_hf_hub(self, repo_id: str) -> None:
         pass
