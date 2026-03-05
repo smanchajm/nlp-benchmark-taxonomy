@@ -10,3 +10,4 @@ model:
   weight_decay: 0.01
   warmup_ratio: 0.1
   seed: 42
+  wandb_project: "nlp-benchmark-classification"

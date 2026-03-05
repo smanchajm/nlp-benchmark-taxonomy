@@ -33,6 +33,7 @@ class SciBERTConfig:
     weight_decay: float
     warmup_ratio: float
     seed: int
+    wandb_project: str
     num_labels: int = 2
 
     @classmethod
@@ -96,6 +97,7 @@ class SciBERTClassifier(BaseModel):
             load_best_model_at_end=True,
             metric_for_best_model="f1",
             seed=self.config.seed,
+            report_to="wandb",
         )
 
         self.trainer = Trainer(

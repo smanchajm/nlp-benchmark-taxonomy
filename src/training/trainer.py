@@ -1,5 +1,6 @@
 import logging
 
+import wandb
 from pathlib import Path
 from datasets import Dataset
 
@@ -16,6 +17,8 @@ SPLITS_DIR = Path("data/splits")
 def main() -> None:
     cfg = SciBERTConfig.from_yaml(CONFIG_PATH)
 
+    wandb.init(project=cfg.wandb_project)
+
     make_splits()
 
     train_ds = Dataset.from_parquet(str(SPLITS_DIR / "train.parquet"))
@@ -27,6 +30,7 @@ def main() -> None:
 
     metrics = model.evaluate(test_ds)
     logger.info("Test metrics: %s", metrics)
+    wandb.log({"test/" + k: v for k, v in metrics.items()})
 
     model.save(cfg.output_dir)
     logger.info("Model saved to %s", cfg.output_dir)
