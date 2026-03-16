@@ -35,21 +35,36 @@ class PaperClassification(BaseModel):
     )
 
 
-SYSTEM_PROMPT = """You classify NLP papers. Determine if the paper INTRODUCES a benchmark/dataset for TEXT CLASSIFICATION.
+SYSTEM_PROMPT = """You classify NLP papers. Determine if the paper INTRODUCES a benchmark/dataset for evaluating TEXT CLASSIFICATION.
 
 POSITIVE: Introduces a benchmark/dataset where a model predicts a discrete label from a fixed set for each text input (or text pair), e.g., sentiment analysis, NLI, topic classification, fact verification, relation classification. Multi-task benchmarks are POSITIVE if ≥75% of sub-tasks are classification.
 
 NEGATIVE if either:
-- The paper does NOT introduce a new dataset (method/model papers, surveys, shared tasks without new data).
-- The paper introduces a dataset for a task whose output is not a single discrete label per input: spans, token-level labels, rankings, structured outputs (e.g., NER, parsing, extractive QA, generation, translation, summarization, dialogue, multiple-choice QA, multimodal benchmarks requiring non-textual inputs).
+- The paper does NOT introduce a new evaluation dataset (method/model papers, surveys, training-only datasets, shared tasks without new data).
+- The paper introduces a dataset for a task whose output is not a single discrete label per input: spans, token-level labels, rankings, structured outputs (e.g., NER, parsing, MCQA, extractive QA, generation, translation, summarization, dialogue, multimodal benchmarks requiring non-textual inputs).
+- The paper introduces a diagnostic test set or meta-evaluation benchmark designed to evaluate a non-classification system (e.g., MT, embeddings, summarization), even if some sub-tasks involve classification.
 
-UNSURE: The paper describes collecting or annotating data but does not clearly frame it as a reusable benchmark, OR it is a multi-task benchmark near the 75% classification boundary, OR the task definition is ambiguous between classification and a non-classification formulation.
+UNSURE: The paper describes collecting or annotating data but does not clearly frame it as a reusable benchmark, OR it is a multi-task benchmark near the 75% classification boundary or where the abstract does not provide enough detail to quantify the proportion of classification sub-tasks, OR the task definition is ambiguous between classification and a non-classification formulation.
 
-task_family: short label for the task type (e.g., "sentiment", "NLI", "NER", "summarization", "MCQA"). Required when the paper introduces a dataset. Set null when NEGATIVE because no new dataset.
+task_family: short label for the task type (e.g., "sentiment", "NLI", "NER", "summarization"). Required when the paper introduces a dataset. Set null when NEGATIVE because no new dataset.
 
 is_multitask: true if the benchmark bundles several sub-tasks into one evaluation suite (e.g. GLUE, SuperGLUE). false otherwise. Set null for NEGATIVE.
 
 Justification: name the task type and explain why it is or is not classification. If NEGATIVE because no new dataset, state that. Max 20 words."""
+
+SYSTEM_PROMPT_LIGHT = """Classify whether an NLP paper INTRODUCES a benchmark/dataset for evaluating TEXT CLASSIFICATION.
+
+POSITIVE: Introduces a dataset where a model predicts a discrete label from a fixed set per text input (or pair). E.g., sentiment, NLI, topic classification, fact verification, relation classification. Multi-task benchmarks: POSITIVE if ≥75% of sub-tasks are classification.
+
+NEGATIVE:
+- No new dataset introduced (method papers, surveys, shared tasks reusing existing data).
+- New dataset but output is not a discrete label: spans, token-level labels, rankings, structured outputs (NER, parsing, extractive QA, generation, translation, summarization, dialogue, MCQA, multimodal with non-textual inputs).
+
+UNSURE: Data collection described but not framed as reusable benchmark; multi-task benchmark near 75% boundary or where proportion of classification sub-tasks cannot be determined from abstract; ambiguous task formulation.
+
+task_family: short task label (e.g., "sentiment", "NLI", "NER"). Required when a dataset is introduced, null otherwise.
+is_multitask: true if multi-task suite, false otherwise, null for NEGATIVE.
+Justification: task type + why it is/isn't classification. If no new dataset, state that. Max 20 words."""
 
 
 def _classify_paper(
