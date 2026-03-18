@@ -24,7 +24,7 @@ class Label(str, enum.Enum):
 
 class PaperClassification(BaseModel):
     label: Label
-    justification: str = Field(description="Max 20 words", max_length=150)
+    justification: str = Field(description="Max 20 words")
     task_family: str | None = Field(
         description='Short task label (e.g. "sentiment", "NLI", "NER"). null if no new dataset.',
         default=None,
@@ -41,7 +41,7 @@ POSITIVE: Introduces a benchmark/dataset where a model predicts a discrete label
 
 NEGATIVE if either:
 - The paper does NOT introduce a new evaluation dataset (method/model papers, surveys, training-only datasets, shared tasks without new data).
-- The paper introduces a dataset for a task whose output is not a single discrete label per input: spans, token-level labels, rankings, structured outputs (e.g., NER, parsing, MCQA, extractive QA, generation, translation, summarization, dialogue, multimodal benchmarks requiring non-textual inputs).
+- The paper introduces a dataset for a task whose output is not a single discrete label per input: spans, token-level labels, rankings, structured outputs (e.g., NER, parsing, MCQA, extractive QA, generation, alignment, translation, summarization, dialogue, multimodal benchmarks requiring non-textual inputs).
 - The paper introduces a diagnostic test set or meta-evaluation benchmark designed to evaluate a non-classification system (e.g., MT, embeddings, summarization), even if some sub-tasks involve classification.
 
 UNSURE: The paper describes collecting or annotating data but does not clearly frame it as a reusable benchmark, OR it is a multi-task benchmark near the 75% classification boundary or where the abstract does not provide enough detail to quantify the proportion of classification sub-tasks, OR the task definition is ambiguous between classification and a non-classification formulation.
@@ -52,19 +52,23 @@ is_multitask: true if the benchmark bundles several sub-tasks into one evaluatio
 
 Justification: name the task type and explain why it is or is not classification. If NEGATIVE because no new dataset, state that. Max 20 words."""
 
-SYSTEM_PROMPT_LIGHT = """Classify whether an NLP paper INTRODUCES a benchmark/dataset for evaluating TEXT CLASSIFICATION.
+SYSTEM_PROMPT_OLD = """Classify: does this NLP paper INTRODUCE a benchmark/dataset for evaluating TEXT CLASSIFICATION?
 
-POSITIVE: Introduces a dataset where a model predicts a discrete label from a fixed set per text input (or pair). E.g., sentiment, NLI, topic classification, fact verification, relation classification. Multi-task benchmarks: POSITIVE if ≥75% of sub-tasks are classification.
+POSITIVE: New dataset, model predicts discrete label from fixed set per text input/pair.
+Examples: sentiment, NLI, topic classification, fact verification, relation classification.
+Multi-task: POSITIVE if ≥75% sub-tasks are classification.
 
 NEGATIVE:
-- No new dataset introduced (method papers, surveys, shared tasks reusing existing data).
-- New dataset but output is not a discrete label: spans, token-level labels, rankings, structured outputs (NER, parsing, extractive QA, generation, translation, summarization, dialogue, MCQA, multimodal with non-textual inputs).
+- No new evaluation dataset (method paper, survey, training-only dataset, shared task reusing data)
+- New dataset but output ≠ single discrete label: spans, token labels, rankings, structured outputs (NER, parsing, MCQA, extractive QA, generation, alignment, translation, summarization, dialogue, multimodal w/ non-textual inputs)
+- Diagnostic/meta-evaluation benchmark for non-classification systems (MT, embeddings, summarization), even if sub-tasks include classification
 
-UNSURE: Data collection described but not framed as reusable benchmark; multi-task benchmark near 75% boundary or where proportion of classification sub-tasks cannot be determined from abstract; ambiguous task formulation.
+UNSURE: Data collected but not framed as reusable benchmark; multi-task near 75% or proportion unquantifiable from abstract; ambiguous task formulation.
 
-task_family: short task label (e.g., "sentiment", "NLI", "NER"). Required when a dataset is introduced, null otherwise.
-is_multitask: true if multi-task suite, false otherwise, null for NEGATIVE.
-Justification: task type + why it is/isn't classification. If no new dataset, state that. Max 20 words."""
+Output fields:
+- task_family: short task label (sentiment, NLI, NER…). Required if dataset introduced, null otherwise.
+- is_multitask: true/false. null for NEGATIVE.
+- justification: task type + why classification or not. If no new dataset, state that. ≤20 words."""
 
 
 def _classify_paper(
@@ -201,13 +205,83 @@ def mistral_batch_results(job_id: str, df: pd.DataFrame) -> pd.DataFrame:
 
     res_df = pd.DataFrame(results).rename(
         columns={
-            c: f"llm_{c}"
+            c: f"mistral_{c}"
             for c in [
                 "label",
                 "justification",
                 "task_family",
                 "is_multitask",
             ]
+        }
+    )
+    return df.merge(res_df, on="bibkey", how="left")
+
+
+_CLASSIFY_TOOL = {
+    "name": "classify_paper",
+    "description": "Return the classification for the paper.",
+    "input_schema": PaperClassification.model_json_schema(),
+}
+
+
+def claude_batch_submit(
+    df: pd.DataFrame, model: str = "claude-haiku-4-5-20251001"
+) -> str:
+    """Submit an Anthropic Message Batches job."""
+    from anthropic import Anthropic
+
+    client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+    requests = [
+        {
+            "custom_id": str(row["bibkey"]),
+            "params": {
+                "model": model,
+                "max_tokens": 256,
+                "system": SYSTEM_PROMPT,
+                "tools": [_CLASSIFY_TOOL],
+                "tool_choice": {"type": "tool", "name": "classify_paper"},
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Title: {row['title']}\nAbstract: {row['abstract']}",
+                    }
+                ],
+            },
+        }
+        for _, row in df.iterrows()
+    ]
+
+    batch = client.messages.batches.create(requests=requests)
+    logger.info("Claude batch submitted: %s", batch.id)
+    return batch.id
+
+
+def claude_batch_results(batch_id: str, df: pd.DataFrame) -> pd.DataFrame:
+    """Fetch and merge results from a completed Anthropic Message Batch."""
+    from anthropic import Anthropic
+
+    client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+    batch = client.messages.batches.retrieve(batch_id)
+    if batch.processing_status != "ended":
+        raise RuntimeError(f"Batch not finished (status: {batch.processing_status})")
+
+    results = []
+    for entry in client.messages.batches.results(batch_id):
+        if entry.result.type != "succeeded":
+            logger.error("Failed for %s: %s", entry.custom_id, entry.result.type)
+            continue
+        tool_input = entry.result.message.content[0].input
+        parsed = PaperClassification.model_validate(tool_input)
+        data = parsed.model_dump()
+        data["bibkey"] = entry.custom_id
+        results.append(data)
+
+    res_df = pd.DataFrame(results).rename(
+        columns={
+            c: f"claude_{c}"
+            for c in ["label", "justification", "task_family", "is_multitask"]
         }
     )
     return df.merge(res_df, on="bibkey", how="left")

@@ -14,41 +14,50 @@ logger = logging.getLogger(__name__)
 
 SIGNALS: dict[str, list[str]] = {
     "introduces": [
-        r"\bwe\s+(?:introduce|present|propose|release|create|construct|compile|curate|build)\b.*\b(?:benchmark|dataset|corpus|evaluation\s+suite|test\s+suite)\b",
+        # --- span-limited: max 120 chars between verb and object ---
+        r"\bwe\s+(?:introduce|present|propose|release|create|construct|compile|curate|build)\b.{0,120}\b(?:benchmark|dataset|corpus|evaluation\s+suite|test\s+suite)\b",
         r"\bnew\s+(?:benchmark|dataset|evaluation|corpus)\b",
         r"\bnovel\s+(?:benchmark|dataset)\b",
-        r"\bcontribut(?:e|ion)\b.*\b(?:benchmark|dataset)\b",
+        r"\bcontribut(?:e|ion)\b.{0,80}\b(?:benchmark|dataset)\b",
     ],
     "evaluates_on": [
         r"\b(?:evaluate|test|assess|validate|experiment)(?:s|ed|ing)?\s+(?:on|across|over)\b",
-        r"\bresults?\s+on\b",
-        r"\bperformanc(?:e|es)\s+on\b",
+        # --- removed "results on" / "performance on": fires on any empirical paper ---
         r"\bfine[\-\s]?tun(?:e|ed|ing)\s+on\b",
     ],
     "benchmark_vocab": [
         r"(?<!existing )(?<!a existing )(?<!standard )(?<!a standard )(?<!current )(?<!a current )(?<!popular )(?<!a popular )(?<!the standard )\bbenchmark(?:s|ing)?\b",
         r"\bleaderboard\b",
+        # --- removed "state-of-the-art", "SOTA", "baseline(s)": too noisy ---
+    ],
+    # --- weak benchmark signals: only count when strong signals are present ---
+    "benchmark_weak": [
         r"\bstate[\-\s]of[\-\s]the[\-\s]art\b",
         r"\bSOTA\b",
         r"\bbaseline(?:s)?\b",
+        r"\bresults?\s+on\b",
+        r"\bperformanc(?:e|es)\s+on\b",
     ],
     "classif_explicit": [
         r"\btext\s+classif(?:ication|ier|iers)\b",
         r"\b(?:sentence|document|review|news|tweet|comment|message|post)\s+classif(?:ication|ier)\b",
         r"\bclassif(?:ication|y)\s+(?:task|benchmark|dataset|problem)\b",
         r"\btext\s+categori[sz]ation\b",
-        r"\blabel\s+prediction\b",
+        # --- removed "label prediction": matches NER / sequence labeling ---
     ],
     "classif_tasks": [
         # Sentiment / opinion
         r"\bsentiment\s+(?:analysis|classification|detection|prediction)\b",
         r"\bopinion\s+(?:mining|classification|detection)\b",
         r"\baspect[\-\s](?:based|level)\b.*\bsentiment\b",
-        r"\bpolarity\b",
+        # --- tightened: require "polarity" with sentiment/opinion/classification context ---
+        r"\b(?:sentiment|opinion)\s+polarity\b",
+        r"\bpolarity\s+(?:classification|detection)\b",
         # NLI / entailment
         r"\bnatural\s+language\s+inference\b",
         r"\btextual\s+entailment\b",
-        r"\bNLI\b",
+        # --- NLI: exclude "native language identification" context ---
+        r"(?<!native language )\bNLI\b",
         r"\brecogniz(?:e|ing)\s+textual\s+entailment\b",
         # Topic
         r"\btopic\s+(?:classification|detection|categorization|labeling)\b",
@@ -68,12 +77,13 @@ SIGNALS: dict[str, list[str]] = {
         r"\birony\s+detection\b",
         r"\bsarcasm\s+detection\b",
         r"\bemotion\s+(?:detection|classification|recognition)\b",
-        # Paraphrase / similarity (binary classification)
+        # Paraphrase (keep — this IS classification)
         r"\bparaphrase\s+(?:detection|identification)\b",
-        r"\bsemantic\s+(?:similarity|equivalence)\b",
         r"\bduplicate\s+(?:detection|question)\b",
+        # --- semantic similarity moved to classif_weak ---
         # Language / domain
-        r"\blanguage\s+identification\b",
+        # --- "language identification" restricted to exclude "native language identification" ---
+        r"(?<!native )\blanguage\s+identification\b",
         r"\bgenre\s+classification\b",
         r"\bdocument\s+classif",
         # Fact checking
@@ -83,6 +93,8 @@ SIGNALS: dict[str, list[str]] = {
     "classif_weak": [
         r"\bnatural\s+language\s+understanding\b",
         r"\bNLU\b",
+        # --- moved from classif_tasks: often regression/ranking, not classification ---
+        r"\bsemantic\s+(?:similarity|equivalence)\b",
     ],
     "known_classif_benchmarks": [
         r"\bGLUE\b",
@@ -101,19 +113,26 @@ SIGNALS: dict[str, list[str]] = {
         r"\bPAWS[\-\s]X\b",
         r"\bIMDb\b",
         r"\bAG[\s\']?s?\s*News\b",
-        r"\bDBpedia\b",
+        # --- removed DBpedia (entity linking noise) and TREC (venue, not a benchmark) ---
         r"\b20[\s]?News(?:groups)?\b",
         r"\bYahoo[\s!]?\s*Answers?\b",
         r"\bYelp\b.*\b(?:review|polarity)\b",
         r"\bAmazon\b.*\breview\b",
-        r"\bSemEval\b",
-        r"\bTREC\b",
+        # --- SemEval removed: it's a venue, not a benchmark ---
+        # --- TREC removed (see above) ---
         r"\bSogou\b",
         r"\bHatEval\b",
         r"\bOffComBR\b",
         r"\bOLID\b",
     ],
 }
+
+# --- Post-filter: detect "we propose a METHOD" pattern ---
+_METHOD_RE = re.compile(
+    r"\bwe\s+(?:introduce|present|propose|release|create|construct|compile|curate|build)\b"
+    r".{0,60}\b(?:method|model|approach|framework|system|technique|architecture|algorithm|pipeline|tool|mechanism|set\s+of\s+experiments)\b",
+    re.IGNORECASE,
+)
 
 
 def compute_scores(title: str, abstract: str) -> dict[str, int]:
@@ -126,6 +145,9 @@ def compute_scores(title: str, abstract: str) -> dict[str, int]:
     scores["benchmark_total"] = (
         scores["introduces"] + scores["evaluates_on"] + scores["benchmark_vocab"]
     )
+    # benchmark_weak only counts if there's already a strong benchmark signal
+    if scores["benchmark_total"] >= 1:
+        scores["benchmark_total"] += scores["benchmark_weak"]
 
     strong_classif = (
         scores["classif_explicit"]
@@ -135,25 +157,40 @@ def compute_scores(title: str, abstract: str) -> dict[str, int]:
     scores["classif_total"] = strong_classif + (
         scores["classif_weak"] if strong_classif >= 1 else 0
     )
+
+    # Flag papers that introduce a method/model (not a benchmark)
+    scores["introduces_method"] = 1 if _METHOD_RE.search(text) else 0
+
     return scores
 
 
 def assign_bucket(row: dict[str, int]) -> str:
-    """Assign a paper to bucket A, B, or C based on precomputed scores."""
-    bench = row["benchmark_total"]
+    """Assign a paper to bucket A, B, or C based on precomputed scores.
+
+    Bucket A requires a genuine *introduces benchmark/dataset* signal,
+    not just "we propose a method ... evaluated on a benchmark".
+    """
+    introduces = row["introduces"]
     classif = row["classif_total"]
     known = row["known_classif_benchmarks"]
+    introduces_method = row.get("introduces_method", 0)
 
-    # A: both signals present, or a known classification benchmark
+    # Downgrade: if the paper introduces a method, not a benchmark
+    if introduces >= 1 and introduces_method >= 1:
+        introduces = 0  # treat as not introducing a benchmark
+
+    # A: paper introduces a benchmark AND has a classification signal
+    if introduces >= 1 and classif >= 1:
+        return "A"
+    if introduces >= 1 and known >= 1:
+        return "A"
+
+    # B: weaker / partial evidence — needs LLM adjudication
     if known >= 1:
-        return "A"
-    if bench >= 1 and classif >= 1:
-        return "A"
-
-    # B: one axis only — needs LLM adjudication
-    if classif >= 1:
         return "B"
-    if row["introduces"] >= 1:
+    if row["introduces"] >= 1:  # original score, before downgrade
+        return "B"
+    if classif >= 1 and row["benchmark_vocab"] >= 1:
         return "B"
 
     # C: no relevant signal
