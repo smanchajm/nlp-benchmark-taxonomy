@@ -31,7 +31,7 @@ def main() -> None:
     args = parse_args()
     cfg = ClassifierConfig.from_yaml(args.config)
 
-    run_name = f"{cfg.pretrained.split('/')[-1]}_{datetime.now():%Y%m%d}"
+    run_name = f"{cfg.pretrained.split('/')[-1]}_{datetime.now():%Y%m%d_%H%M}"
     model_tag = cfg.pretrained.split("/")[-1]
     wandb.init(project=cfg.wandb_project, name=run_name, tags=[model_tag])
 
