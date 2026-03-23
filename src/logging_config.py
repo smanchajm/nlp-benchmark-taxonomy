@@ -7,6 +7,9 @@ ROOT = Path(__file__).parent.parent  # src/ → project root
 # Third-party loggers that are too noisy at WARNING level for normal use.
 _QUIET_LOGGERS = {
     "acl-anthology": logging.ERROR,
+    "httpx": logging.WARNING,
+    "transformers": logging.WARNING,
+    "datasets": logging.WARNING,
 }
 
 
