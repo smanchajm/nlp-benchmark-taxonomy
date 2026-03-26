@@ -1,4 +1,4 @@
-project: nlp-benchmark-classification-modernbert
+project: nlp-benchmark-classification-modernbert-augmented
 program: src.training.trainer
 method: bayes
 run_cap: 25

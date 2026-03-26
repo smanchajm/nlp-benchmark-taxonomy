@@ -13,11 +13,7 @@ class BaseModel(ABC):
         pass
 
     @abstractmethod
-    def test(self, test_data: Dataset) -> dict[str, float]:
-        pass
-
-    @abstractmethod
-    def predict(self, texts: list[str]) -> list[int]:
+    def test(self, test_data: Dataset) -> tuple[dict[str, float], list[int], "np.ndarray"]:
         pass
 
     @abstractmethod

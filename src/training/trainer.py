@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import wandb
 from datasets import Dataset
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
 from logging_config import setup_logging
 from src.models.classifier import TransformerClassifier, ClassifierConfig
@@ -67,26 +68,69 @@ def test(cfg: ClassifierConfig) -> None:
     model = TransformerClassifier(cfg)
     model.load(cfg.output_dir)
 
-    metrics = model.test(test_ds)
+    metrics, preds, probas = model.test(test_ds)
+    labels = test_ds["label"]
     logger.info("Test metrics: %s", metrics)
-    wandb.log({"test/" + k.removeprefix("test_"): v for k, v in metrics.items()})
-
-    preds = model.predict(test_ds)
+    wandb.log({"test/" + k: v for k, v in metrics.items()})
+    confidence = probas.max(axis=1)
     predictions_df = pd.DataFrame(
         {
             "bibkey": test_ds["bibkey"],
-            "label": test_ds["label"],
+            "label": labels,
             "predicted": preds,
+            "confidence": confidence,
+            "prob_positive": probas[:, 1],
         }
     )
+    if "bucket" in test_ds.column_names:
+        predictions_df["bucket"] = test_ds["bucket"]
+
     preds_path = Path(cfg.output_dir) / "test_predictions.parquet"
     predictions_df.to_parquet(preds_path, index=False)
     logger.info("Predictions saved to %s", preds_path)
+
+    # Log uncertain predictions (confidence < 0.7)
+    uncertain = predictions_df[
+        predictions_df["confidence"] < cfg.uncertainty_threshold
+    ].sort_values("confidence")
+    wandb.summary["test/n_uncertain"] = len(uncertain)
+    wandb.log({"test/uncertain": wandb.Table(dataframe=uncertain)})
     wandb.log({"test/predictions": wandb.Table(dataframe=predictions_df)})
-    wandb.log({"test/confusion_matrix": wandb.plot.confusion_matrix(
-        y_true=test_ds["label"], preds=preds,
-        class_names=["negative", "positive"],
-    )})
+    wandb.log(
+        {
+            "test/confusion_matrix": wandb.plot.confusion_matrix(
+                y_true=labels,
+                preds=preds,
+                class_names=["negative", "positive"],
+            )
+        }
+    )
+
+    # Per-bucket metrics
+    if "bucket" in predictions_df.columns:
+        for bucket, group in predictions_df.groupby("bucket"):
+            p, r, f1, _ = precision_recall_fscore_support(
+                group["label"], group["predicted"], average="binary"
+            )
+            acc = accuracy_score(group["label"], group["predicted"])
+            bucket_metrics = {
+                f"test/{bucket}/accuracy": acc,
+                f"test/{bucket}/precision": p,
+                f"test/{bucket}/recall": r,
+                f"test/{bucket}/f1": f1,
+                f"test/{bucket}/support": len(group),
+            }
+            wandb.log(bucket_metrics)
+            wandb.log(
+                {
+                    f"test/{bucket}/confusion_matrix": wandb.plot.confusion_matrix(
+                        y_true=group["label"].tolist(),
+                        preds=group["predicted"].tolist(),
+                        class_names=["negative", "positive"],
+                    )
+                }
+            )
+            logger.info("Bucket %s metrics: %s", bucket, bucket_metrics)
 
 
 def main() -> None:

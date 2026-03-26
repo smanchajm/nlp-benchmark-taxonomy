@@ -65,6 +65,7 @@ class ClassifierConfig:
     class_weight_smoothing: float
     early_stopping_patience: int
     bf16: bool = True
+    uncertainty_threshold: float = 0.7
 
     @classmethod
     def from_dict(cls, d: dict) -> ClassifierConfig:
@@ -180,18 +181,36 @@ class TransformerClassifier(BaseModel):
         self.trainer.model = self.model
         self.best_metric = self.trainer.state.best_metric
 
-    def test(self, test_data: Dataset) -> dict[str, float]:
+    def test(
+        self, test_data: Dataset
+    ) -> tuple[dict[str, float], list[int], np.ndarray]:
+        """Run inference once: return (metrics, predictions, probabilities)."""
         if self.trainer is None:
             raise RuntimeError("Model must be trained or loaded before testing.")
         test_tok = self._tokenize(test_data)
-        return self.trainer.evaluate(test_tok, metric_key_prefix="test")
+        output = self.trainer.predict(test_tok)
+        logits = output.predictions
+        labels = output.label_ids
+        preds = logits.argmax(axis=-1)
+        probas = torch.softmax(torch.tensor(logits), dim=-1).numpy()
 
-    def predict(self, dataset: Dataset) -> list[int]:
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            labels, preds, average="binary"
+        )
+        acc = accuracy_score(labels, preds)
+        metrics = {"accuracy": acc, "precision": precision, "recall": recall, "f1": f1}
+
+        return metrics, preds.tolist(), probas
+
+    def predict(self, dataset: Dataset) -> tuple[list[int], np.ndarray]:
+        """Run inference on unlabelled data: return (predictions, probabilities)."""
         if self.trainer is None:
-            raise RuntimeError("Model must be trained before prediction.")
+            raise RuntimeError("Model must be trained or loaded before prediction.")
         tok = self._tokenize(dataset)
         output = self.trainer.predict(tok)
-        return output.predictions.argmax(axis=-1).tolist()
+        logits = output.predictions
+        probas = torch.softmax(torch.tensor(logits), dim=-1).numpy()
+        return logits.argmax(axis=-1).tolist(), probas
 
     def save(self, path: str | Path) -> None:
         if self.trainer is None:
@@ -207,6 +226,11 @@ class TransformerClassifier(BaseModel):
 
         self.trainer = Trainer(
             model=self.model,
+            args=TrainingArguments(
+                output_dir=str(path),
+                per_device_eval_batch_size=self.config.per_device_eval_batch_size,
+                bf16=self.config.bf16,
+            ),
             processing_class=self.tokenizer,
             data_collator=DataCollatorWithPadding(self.tokenizer),
             compute_metrics=self._compute_metrics,

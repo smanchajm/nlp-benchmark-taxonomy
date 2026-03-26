@@ -17,7 +17,12 @@ mkdir -p "$SCRATCH_DIR/data/splits/ready"
 cp -r "$PROJECT_DIR"/{src,config,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
 cp -r "$PROJECT_DIR/data/splits/ready/"* "$SCRATCH_DIR/data/splits/ready/"
 mkdir -p "$SCRATCH_DIR/$CHECKPOINT"
-cp -r "$PROJECT_DIR/$CHECKPOINT/"* "$SCRATCH_DIR/$CHECKPOINT/"
+if [ -d "$SCRATCH_DIR/$CHECKPOINT" ] && [ -f "$SCRATCH_DIR/$CHECKPOINT/model.safetensors" ]; then
+    echo "Checkpoint already on scratch, skipping copy."
+else
+    echo "Copying checkpoint to scratch."
+    cp -r "$PROJECT_DIR/$CHECKPOINT/"* "$SCRATCH_DIR/$CHECKPOINT/"
+fi
 
 cd "$SCRATCH_DIR"
 
