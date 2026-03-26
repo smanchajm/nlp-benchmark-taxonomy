@@ -24,27 +24,52 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_CONFIG,
         help="Path to YAML config file (default: config/base.yaml)",
     )
+    parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="Run as a W&B sweep agent (overrides config with wandb.config)",
+    )
+    parser.add_argument(
+        "--test-only",
+        type=Path,
+        default=None,
+        help="Skip training; evaluate a saved checkpoint on the test set",
+    )
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
-    cfg = ClassifierConfig.from_yaml(args.config)
+def _apply_sweep_overrides(cfg: ClassifierConfig) -> ClassifierConfig:
+    """Override config fields with values from wandb.config (set by sweep agent)."""
+    sweep_params = dict(wandb.config)
+    for key, value in sweep_params.items():
+        if hasattr(cfg, key):
+            setattr(cfg, key, value)
+            logger.info("Sweep override: %s = %s", key, value)
+    return cfg
 
-    run_name = f"{cfg.pretrained.split('/')[-1]}_{datetime.now():%Y%m%d_%H%M}"
-    model_tag = cfg.pretrained.split("/")[-1]
-    wandb.init(project=cfg.wandb_project, name=run_name, tags=[model_tag])
 
+def train(cfg: ClassifierConfig) -> None:
+    """Train + validate only. No test set evaluation."""
     train_ds = Dataset.from_parquet(str(SPLITS_DIR / "train.parquet"))
     val_ds = Dataset.from_parquet(str(SPLITS_DIR / "val.parquet"))
-    test_ds = Dataset.from_parquet(str(SPLITS_DIR / "test.parquet"))
 
     model = TransformerClassifier(cfg)
     model.train(train_ds, val_ds)
+    wandb.summary["best_val_f1"] = model.best_metric
+    model.save(cfg.output_dir)
+    logger.info("Model saved to %s", cfg.output_dir)
 
-    metrics = model.evaluate(test_ds)
+
+def test(cfg: ClassifierConfig) -> None:
+    """Test a trained model on the held-out test set and log results."""
+    test_ds = Dataset.from_parquet(str(SPLITS_DIR / "test.parquet"))
+
+    model = TransformerClassifier(cfg)
+    model.load(cfg.output_dir)
+
+    metrics = model.test(test_ds)
     logger.info("Test metrics: %s", metrics)
-    wandb.log({"test/" + k.removeprefix("eval_"): v for k, v in metrics.items()})
+    wandb.log({"test/" + k.removeprefix("test_"): v for k, v in metrics.items()})
 
     preds = model.predict(test_ds)
     predictions_df = pd.DataFrame(
@@ -58,9 +83,32 @@ def main() -> None:
     predictions_df.to_parquet(preds_path, index=False)
     logger.info("Predictions saved to %s", preds_path)
     wandb.log({"test/predictions": wandb.Table(dataframe=predictions_df)})
+    wandb.log({"test/confusion_matrix": wandb.plot.confusion_matrix(
+        y_true=test_ds["label"], preds=preds,
+        class_names=["negative", "positive"],
+    )})
 
-    model.save(cfg.output_dir)
-    logger.info("Model saved to %s", cfg.output_dir)
+
+def main() -> None:
+    args = parse_args()
+    cfg = ClassifierConfig.from_yaml(args.config)
+
+    model_tag = cfg.pretrained.split("/")[-1]
+
+    if args.sweep:
+        wandb.init()
+        cfg = _apply_sweep_overrides(cfg)
+        cfg.output_dir = str(Path(cfg.output_dir) / wandb.run.id)
+        train(cfg)
+    elif args.test_only:
+        cfg.output_dir = str(args.test_only)
+        run_name = f"{model_tag}_test_{datetime.now():%Y%m%d_%H%M}"
+        wandb.init(project=cfg.wandb_project, name=run_name, tags=[model_tag, "test"])
+        test(cfg)
+    else:
+        run_name = f"{model_tag}_{datetime.now():%Y%m%d_%H%M}"
+        wandb.init(project=cfg.wandb_project, name=run_name, tags=[model_tag])
+        train(cfg)
 
     wandb.finish()
 

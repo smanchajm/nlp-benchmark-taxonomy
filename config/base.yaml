@@ -1,6 +1,5 @@
 model:
   pretrained: "answerdotai/ModernBERT-base"
-  num_labels: 2
   max_length: 512
   output_dir: "data/models/modernbert"
   num_train_epochs: 10
@@ -13,4 +12,4 @@ model:
   num_labels: 2
   class_weight_smoothing: 0.5
   early_stopping_patience: 2
-  wandb_project: "nlp-benchmark-classification"
+  wandb_project: "nlp-benchmark-classification-modernbert"

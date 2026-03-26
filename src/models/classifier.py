@@ -91,9 +91,15 @@ class TransformerClassifier(BaseModel):
         return next(self.model.parameters()).device
 
     def _tokenize(self, dataset: Dataset) -> Dataset:
+        has_title = "title" in dataset.column_names
         return dataset.map(
             lambda batch: self.tokenizer(
-                batch["abstract"],
+                [
+                    f"{t} {self.tokenizer.sep_token} {a}"
+                    for t, a in zip(batch["title"], batch["abstract"])
+                ]
+                if has_title
+                else batch["abstract"],
                 truncation=True,
                 padding=False,
                 max_length=self.config.max_length,
@@ -172,12 +178,13 @@ class TransformerClassifier(BaseModel):
             self.model.load_state_dict(state_dict)
             logger.info("Loaded best checkpoint weights from %s", ckpt_path)
         self.trainer.model = self.model
+        self.best_metric = self.trainer.state.best_metric
 
-    def evaluate(self, test_data: Dataset) -> dict[str, float]:
+    def test(self, test_data: Dataset) -> dict[str, float]:
         if self.trainer is None:
-            raise RuntimeError("Model must be trained before evaluation.")
+            raise RuntimeError("Model must be trained or loaded before testing.")
         test_tok = self._tokenize(test_data)
-        return self.trainer.evaluate(test_tok)
+        return self.trainer.evaluate(test_tok, metric_key_prefix="test")
 
     def predict(self, dataset: Dataset) -> list[int]:
         if self.trainer is None:
@@ -190,6 +197,20 @@ class TransformerClassifier(BaseModel):
         if self.trainer is None:
             raise RuntimeError("Model must be trained before saving.")
         self.trainer.save_model(str(path))
+
+    def load(self, path: str | Path) -> None:
+        """Load a saved checkpoint and set up a Trainer for evaluation."""
+        ckpt_path = Path(path) / "model.safetensors"
+        state_dict = _remap_legacy_keys(load_safetensors(str(ckpt_path)))
+        self.model.load_state_dict(state_dict)
+        logger.info("Loaded model weights from %s", ckpt_path)
+
+        self.trainer = Trainer(
+            model=self.model,
+            processing_class=self.tokenizer,
+            data_collator=DataCollatorWithPadding(self.tokenizer),
+            compute_metrics=self._compute_metrics,
+        )
 
     def push_to_hf_hub(self, repo_id: str) -> None:
         self.model.push_to_hub(repo_id)

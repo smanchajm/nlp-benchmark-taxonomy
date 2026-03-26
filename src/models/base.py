@@ -13,7 +13,7 @@ class BaseModel(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, test_data: Dataset) -> dict[str, float]:
+    def test(self, test_data: Dataset) -> dict[str, float]:
         pass
 
     @abstractmethod
