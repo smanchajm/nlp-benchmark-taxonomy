@@ -11,6 +11,9 @@ SWEEP_ID="${1:?Usage: sbatch scripts/sweep.sh <sweep_id>}"
 PROJECT_DIR="$HOME/nlp-benchmark-taxonomy"
 SCRATCH_DIR="/Tmp/$(whoami)/${SLURM_JOB_ID}"
 
+cleanup() { rm -rf "$SCRATCH_DIR"; echo "Cleaned up $SCRATCH_DIR"; }
+trap cleanup EXIT
+
 # Copy local project
 mkdir -p "$SCRATCH_DIR/data/splits/ready"
 mkdir -p "$SCRATCH_DIR/data/models"

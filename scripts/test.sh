@@ -12,6 +12,9 @@ CONFIG="${2:?Usage: sbatch scripts/test.sh <checkpoint_path> <config>}"
 PROJECT_DIR="$HOME/nlp-benchmark-taxonomy"
 SCRATCH_DIR="/Tmp/$(whoami)/${SLURM_JOB_ID}"
 
+cleanup() { rm -rf "$SCRATCH_DIR"; echo "Cleaned up $SCRATCH_DIR"; }
+trap cleanup EXIT
+
 # Copy project + only the needed checkpoint
 mkdir -p "$SCRATCH_DIR/data/splits/ready"
 cp -r "$PROJECT_DIR"/{src,config,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"

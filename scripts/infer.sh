@@ -13,6 +13,9 @@ CONFIG="${3:?Usage: sbatch scripts/infer.sh <input_parquet> <checkpoint_path> <c
 PROJECT_DIR="$HOME/nlp-benchmark-taxonomy"
 SCRATCH_DIR="/Tmp/$(whoami)/${SLURM_JOB_ID}"
 
+cleanup() { rm -rf "$SCRATCH_DIR"; echo "Cleaned up $SCRATCH_DIR"; }
+trap cleanup EXIT
+
 # Copy project + checkpoint + input data
 mkdir -p "$SCRATCH_DIR/$(dirname "$INPUT")"
 cp -r "$PROJECT_DIR"/{src,config,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"

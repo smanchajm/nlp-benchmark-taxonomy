@@ -1,4 +1,4 @@
-project: nlp-benchmark-classification-scibert-augmented
+project: nlp-benchmark-classification-scibert-augmented-bucket_a_b
 program: src.training.trainer
 method: bayes
 run_cap: 25

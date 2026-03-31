@@ -12,4 +12,4 @@ model:
   num_labels: 2
   class_weight_smoothing: 0.5
   early_stopping_patience: 2
-  wandb_project: "nlp-benchmark-classification-scibert-augmented"
+  wandb_project: "nlp-benchmark-classification-scibert-augmented-bucket_a_b"
