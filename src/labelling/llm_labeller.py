@@ -2,6 +2,7 @@ import enum
 import json
 import logging
 import os
+from dataclasses import dataclass
 
 import instructor
 import pandas as pd
@@ -22,7 +23,12 @@ class Label(str, enum.Enum):
     UNSURE = "UNSURE"
 
 
+# ── Filter task: simple yes/no classification ────────────────────────────
+
+
 class PaperClassification(BaseModel):
+    """Lightweight schema for the 'filter' task."""
+
     label: Label
     justification: str = Field(description="Max 20 words")
     task_family: str | None = Field(
@@ -35,7 +41,7 @@ class PaperClassification(BaseModel):
     )
 
 
-SYSTEM_PROMPT = """You classify NLP papers. Determine if the paper INTRODUCES a benchmark/dataset for evaluating TEXT CLASSIFICATION.
+_FILTER_PROMPT = """You classify NLP papers. Determine if the paper INTRODUCES a benchmark/dataset for evaluating TEXT CLASSIFICATION.
 
 POSITIVE: Introduces a benchmark/dataset where a model predicts a discrete label from a fixed set for each text input (or text pair), e.g., sentiment analysis, NLI, topic classification, fact verification, relation classification. Multi-task benchmarks are POSITIVE if ≥75% of sub-tasks are classification.
 
@@ -52,23 +58,116 @@ is_multitask: true if the benchmark bundles several sub-tasks into one evaluatio
 
 Justification: name the task type and explain why it is or is not classification. If NEGATIVE because no new dataset, state that. Max 20 words."""
 
-SYSTEM_PROMPT_OLD = """Classify: does this NLP paper INTRODUCE a benchmark/dataset for evaluating TEXT CLASSIFICATION?
 
-POSITIVE: New dataset, model predicts discrete label from fixed set per text input/pair.
-Examples: sentiment, NLI, topic classification, fact verification, relation classification.
-Multi-task: POSITIVE if ≥75% sub-tasks are classification.
+# ── Taxonomy task: rich metadata extraction ──────────────────────────────
 
-NEGATIVE:
-- No new evaluation dataset (method paper, survey, training-only dataset, shared task reusing data)
-- New dataset but output ≠ single discrete label: spans, token labels, rankings, structured outputs (NER, parsing, MCQA, extractive QA, generation, alignment, translation, summarization, dialogue, multimodal w/ non-textual inputs)
-- Diagnostic/meta-evaluation benchmark for non-classification systems (MT, embeddings, summarization), even if sub-tasks include classification
 
-UNSURE: Data collected but not framed as reusable benchmark; multi-task near 75% or proportion unquantifiable from abstract; ambiguous task formulation.
+class PaperTaxonomy(BaseModel):
+    """Rich schema for the 'taxonomy' task.
 
-Output fields:
-- task_family: short task label (sentiment, NLI, NER…). Required if dataset introduced, null otherwise.
-- is_multitask: true/false. null for NEGATIVE.
-- justification: task type + why classification or not. If no new dataset, state that. ≤20 words."""
+    Enum-like fields use plain strings to tolerate LLM variation.
+    Expected values are documented in field descriptions for schema guidance.
+    """
+
+    label: Label
+    justification: str = Field(
+        description="Max 20 words. Name the task type and explain why it is or is not classification.",
+    )
+    benchmark_names: list[str] | None = Field(
+        description="Names of introduced benchmarks/datasets. Null if NEGATIVE.",
+        default=None,
+    )
+    task_type: str | None = Field(
+        description="Short snake_case classification task label (e.g. sentiment_analysis). Null if NEGATIVE.",
+        default=None,
+    )
+    input_type: str | None = Field(
+        description="One of: sentence, sentence_pair, document. Null if NEGATIVE.",
+        default=None,
+    )
+    label_type: str | None = Field(
+        description="One of: binary, multi_class, multi_label. Null if NEGATIVE.",
+        default=None,
+    )
+    domain: str | None = Field(
+        description="Short snake_case application domain (e.g. biomedical, social_media). Null if NEGATIVE.",
+        default=None,
+    )
+    languages: list[str] | None = Field(
+        description="ISO 639-1 codes or ['multilingual']. Null if NEGATIVE.",
+        default=None,
+    )
+    data_source: str | None = Field(
+        description="One of: crowdsourced, expert_annotated, automatic, existing_corpus, web_scraped. Null if NEGATIVE.",
+        default=None,
+    )
+    benchmark_novelty: str | None = Field(
+        description="One of: new, extension, adaptation. Null if NEGATIVE.",
+        default=None,
+    )
+    is_multitask: bool | None = Field(default=None)
+
+
+_TAXONOMY_PROMPT = """You classify NLP papers. Determine if the paper INTRODUCES a benchmark/dataset for evaluating TEXT CLASSIFICATION.
+
+POSITIVE: Introduces a benchmark/dataset where a model predicts a discrete label from a fixed set for each text input (or text pair), e.g., sentiment analysis, NLI, topic classification, fact verification, relation classification. Multi-task benchmarks are POSITIVE if ≥75% of sub-tasks are classification.
+NEGATIVE if either:
+- The paper does NOT introduce a new evaluation dataset (method/model papers, surveys, training-only datasets, shared tasks without new data).
+- The paper introduces a dataset for a task whose output is not a single discrete label per input: spans, token-level labels, rankings, structured outputs (e.g., NER, parsing, MCQA, extractive QA, generation, alignment, translation, summarization, dialogue, multimodal benchmarks requiring non-textual inputs).
+- The paper introduces a diagnostic test set or meta-evaluation benchmark designed to evaluate a non-classification system (e.g., MT, embeddings, summarization), even if some sub-tasks involve classification.
+UNSURE: The paper describes collecting or annotating data but does not clearly frame it as a reusable benchmark, OR it is a multi-task benchmark near the 75% classification boundary, OR the task definition is ambiguous between classification and a non-classification formulation.
+
+When POSITIVE or UNSURE, fill all taxonomy fields. When NEGATIVE, set all taxonomy fields to null.
+For task_type and domain, use your best judgment with a short snake_case label — do not constrain to a fixed list.
+For languages, use ISO 639-1 codes or "multilingual"."""
+
+
+# ── Task configuration registry ──────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class TaskConfig:
+    """Bundles prompt, schema, and tool metadata for a labelling task."""
+
+    system_prompt: str
+    response_model: type[BaseModel]
+    tool_name: str
+    tool_description: str
+    max_tokens: int = 256
+
+    @property
+    def tool_schema(self) -> dict:
+        return {
+            "name": self.tool_name,
+            "description": self.tool_description,
+            "input_schema": self.response_model.model_json_schema(),
+        }
+
+    @property
+    def result_columns(self) -> list[str]:
+        return list(self.response_model.model_fields.keys())
+
+
+TASKS: dict[str, TaskConfig] = {
+    "filter": TaskConfig(
+        system_prompt=_FILTER_PROMPT,
+        response_model=PaperClassification,
+        tool_name="classify_paper",
+        tool_description="Return the classification for the paper.",
+    ),
+    "taxonomy": TaskConfig(
+        system_prompt=_TAXONOMY_PROMPT,
+        response_model=PaperTaxonomy,
+        tool_name="classify_paper",
+        tool_description="Classify an NLP paper and extract taxonomy metadata.",
+        max_tokens=512,
+    ),
+}
+
+DEFAULT_TASK = "taxonomy"
+
+
+# ── Core classification ──────────────────────────────────────────────────
 
 
 def _classify_paper(
@@ -76,14 +175,16 @@ def _classify_paper(
     provider: str,
     title: str,
     abstract: str,
-) -> PaperClassification:
+    task: str = DEFAULT_TASK,
+) -> BaseModel:
     """Classify a single paper."""
+    cfg = TASKS[task]
     try:
         return client.chat.completions.create(
             model=MODEL_MAP[provider],
-            response_model=PaperClassification,
+            response_model=cfg.response_model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": cfg.system_prompt},
                 {
                     "role": "user",
                     "content": f"Title: {title}\nAbstract: {abstract}",
@@ -93,7 +194,7 @@ def _classify_paper(
         )
     except Exception as e:
         logger.error("Classification failed for '%s': %s", title, e)
-        return PaperClassification(
+        return cfg.response_model(
             label=Label.UNSURE,
             justification="API Error",
         )
@@ -126,13 +227,14 @@ def _create_client(provider: str):
 def label_papers(
     df: pd.DataFrame,
     provider: str = "mistral",
+    task: str = DEFAULT_TASK,
 ) -> pd.DataFrame:
     """Classify all papers in *df* sequentially and return the augmented DataFrame."""
     client = _create_client(provider)
 
-    logger.info("Classifying %d papers via %s...", len(df), provider)
+    logger.info("Classifying %d papers via %s (task=%s)...", len(df), provider, task)
     results = [
-        _classify_paper(client, provider, r.title, str(r.abstract))
+        _classify_paper(client, provider, r.title, str(r.abstract), task=task)
         for r in df.itertuples()
     ]
 
@@ -142,17 +244,25 @@ def label_papers(
     return pd.concat([df.reset_index(drop=True), res_df], axis=1)
 
 
-def mistral_batch_submit(df: pd.DataFrame, model: str = "mistral-small-latest") -> str:
+# ── Mistral Batch API ────────────────────────────────────────────────────
+
+
+def mistral_batch_submit(
+    df: pd.DataFrame,
+    model: str = "mistral-small-latest",
+    task: str = DEFAULT_TASK,
+) -> str:
     """Submit a Mistral Batch API job with auto-generated JSON schema."""
     from mistralai import Mistral
     from mistralai.models import BatchRequest
 
+    cfg = TASKS[task]
     client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
     schema = {
         "type": "json_schema",
         "json_schema": {
             "name": "PaperClass",
-            "schema": PaperClassification.model_json_schema(),
+            "schema": cfg.response_model.model_json_schema(),
             "strict": True,
         },
     }
@@ -163,7 +273,7 @@ def mistral_batch_submit(df: pd.DataFrame, model: str = "mistral-small-latest") 
             body={
                 "model": model,
                 "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": cfg.system_prompt},
                     {
                         "role": "user",
                         "content": f"Title: {row['title']}\nAbstract: {row['abstract']}",
@@ -183,10 +293,15 @@ def mistral_batch_submit(df: pd.DataFrame, model: str = "mistral-small-latest") 
     return job.id
 
 
-def mistral_batch_results(job_id: str, df: pd.DataFrame) -> pd.DataFrame:
+def mistral_batch_results(
+    job_id: str,
+    df: pd.DataFrame,
+    task: str = DEFAULT_TASK,
+) -> pd.DataFrame:
     """Fetch and merge results from a completed Mistral Batch job."""
     from mistralai import Mistral
 
+    cfg = TASKS[task]
     client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
 
     job = client.batch.jobs.get(job_id=job_id)
@@ -198,38 +313,29 @@ def mistral_batch_results(job_id: str, df: pd.DataFrame) -> pd.DataFrame:
     for line in output_file.read().decode("utf-8").strip().split("\n"):
         entry = json.loads(line)
         content = entry["response"]["body"]["choices"][0]["message"]["content"]
-        parsed = PaperClassification.model_validate_json(content)
+        parsed = cfg.response_model.model_validate_json(content)
         data = parsed.model_dump()
         data["bibkey"] = entry["custom_id"]
         results.append(data)
 
     res_df = pd.DataFrame(results).rename(
-        columns={
-            c: f"mistral_{c}"
-            for c in [
-                "label",
-                "justification",
-                "task_family",
-                "is_multitask",
-            ]
-        }
+        columns={c: f"mistral_{c}" for c in cfg.result_columns}
     )
     return df.merge(res_df, on="bibkey", how="left")
 
 
-_CLASSIFY_TOOL = {
-    "name": "classify_paper",
-    "description": "Return the classification for the paper.",
-    "input_schema": PaperClassification.model_json_schema(),
-}
+# ── Claude Batch API ─────────────────────────────────────────────────────
 
 
 def claude_batch_submit(
-    df: pd.DataFrame, model: str = "claude-haiku-4-5-20251001"
+    df: pd.DataFrame,
+    model: str = "claude-haiku-4-5-20251001",
+    task: str = DEFAULT_TASK,
 ) -> str:
     """Submit an Anthropic Message Batches job."""
     from anthropic import Anthropic
 
+    cfg = TASKS[task]
     client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
     requests = [
@@ -237,10 +343,10 @@ def claude_batch_submit(
             "custom_id": str(row["bibkey"]),
             "params": {
                 "model": model,
-                "max_tokens": 256,
-                "system": SYSTEM_PROMPT,
-                "tools": [_CLASSIFY_TOOL],
-                "tool_choice": {"type": "tool", "name": "classify_paper"},
+                "max_tokens": cfg.max_tokens,
+                "system": cfg.system_prompt,
+                "tools": [cfg.tool_schema],
+                "tool_choice": {"type": "tool", "name": cfg.tool_name},
                 "messages": [
                     {
                         "role": "user",
@@ -257,10 +363,15 @@ def claude_batch_submit(
     return batch.id
 
 
-def claude_batch_results(batch_id: str, df: pd.DataFrame) -> pd.DataFrame:
+def claude_batch_results(
+    batch_id: str,
+    df: pd.DataFrame,
+    task: str = DEFAULT_TASK,
+) -> pd.DataFrame:
     """Fetch and merge results from a completed Anthropic Message Batch."""
     from anthropic import Anthropic
 
+    cfg = TASKS[task]
     client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
     batch = client.messages.batches.retrieve(batch_id)
@@ -268,20 +379,31 @@ def claude_batch_results(batch_id: str, df: pd.DataFrame) -> pd.DataFrame:
         raise RuntimeError(f"Batch not finished (status: {batch.processing_status})")
 
     results = []
+    errors = 0
     for entry in client.messages.batches.results(batch_id):
         if entry.result.type != "succeeded":
             logger.error("Failed for %s: %s", entry.custom_id, entry.result.type)
+            errors += 1
             continue
         tool_input = entry.result.message.content[0].input
-        parsed = PaperClassification.model_validate(tool_input)
+        try:
+            parsed = cfg.response_model.model_validate(tool_input)
+        except Exception as e:
+            logger.warning("Validation error for %s: %s", entry.custom_id, e)
+            errors += 1
+            continue
         data = parsed.model_dump()
         data["bibkey"] = entry.custom_id
         results.append(data)
 
+    if errors:
+        logger.warning(
+            "Skipped %d entries due to errors (out of %d)",
+            errors,
+            errors + len(results),
+        )
+
     res_df = pd.DataFrame(results).rename(
-        columns={
-            c: f"claude_{c}"
-            for c in ["label", "justification", "task_family", "is_multitask"]
-        }
+        columns={c: f"claude_{c}" for c in cfg.result_columns}
     )
     return df.merge(res_df, on="bibkey", how="left")
