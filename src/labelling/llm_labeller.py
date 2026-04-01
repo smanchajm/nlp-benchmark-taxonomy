@@ -14,6 +14,7 @@ MODEL_MAP: dict[str, str] = {
     "mistral": "mistral-small-latest",
     "claude": "claude-3-haiku-20240307",
     "gemini": "gemini-1.5-flash-latest",
+    "deepseek": "deepseek-chat",
 }
 
 
@@ -117,7 +118,8 @@ NEGATIVE if either:
 - The paper introduces a diagnostic test set or meta-evaluation benchmark designed to evaluate a non-classification system (e.g., MT, embeddings, summarization), even if some sub-tasks involve classification.
 UNSURE: The paper describes collecting or annotating data but does not clearly frame it as a reusable benchmark, OR it is a multi-task benchmark near the 75% classification boundary, OR the task definition is ambiguous between classification and a non-classification formulation.
 
-When POSITIVE or UNSURE, fill all taxonomy fields. When NEGATIVE, set all taxonomy fields to null.
+When NEGATIVE, set all taxonomy fields to null.
+When POSITIVE or UNSURE, fill only the fields whose value is explicitly stated or strongly implied by the title and abstract. Set a field to null if the information is absent or would require guessing — do NOT hallucinate values.
 For task_type and domain, use your best judgment with a short snake_case label — do not constrain to a fixed list.
 For languages, use ISO 639-1 codes or "multilingual"."""
 
@@ -200,7 +202,7 @@ def _classify_paper(
         )
 
 
-def _create_client(provider: str):
+def _create_client(provider: str, *, async_: bool = False):
     """Create an instructor-wrapped client for the given provider.
 
     Provider-specific SDKs are imported lazily so users only need the SDK
@@ -221,6 +223,24 @@ def _create_client(provider: str):
 
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
         return instructor.from_gemini(genai.GenerativeModel("gemini-1.5-flash-latest"))
+    if provider == "deepseek":
+        if async_:
+            from openai import AsyncOpenAI
+
+            return instructor.from_openai(
+                AsyncOpenAI(
+                    api_key=os.getenv("DEEPSEEK_API_KEY"),
+                    base_url="https://api.deepseek.com",
+                )
+            )
+        from openai import OpenAI
+
+        return instructor.from_openai(
+            OpenAI(
+                api_key=os.getenv("DEEPSEEK_API_KEY"),
+                base_url="https://api.deepseek.com",
+            )
+        )
     raise ValueError(f"Unknown provider: {provider!r}")
 
 
@@ -228,20 +248,131 @@ def label_papers(
     df: pd.DataFrame,
     provider: str = "mistral",
     task: str = DEFAULT_TASK,
+    checkpoint_path: str | None = None,
+    checkpoint_every: int = 50,
 ) -> pd.DataFrame:
-    """Classify all papers in *df* sequentially and return the augmented DataFrame."""
+    """Classify all papers in *df* sequentially with progress bar.
+
+    Args:
+        checkpoint_path: If set, save intermediate results to this parquet path
+                         every *checkpoint_every* papers.
+        checkpoint_every: How often to save checkpoints (default: 50).
+    """
+    from tqdm.auto import tqdm
+
     client = _create_client(provider)
 
     logger.info("Classifying %d papers via %s (task=%s)...", len(df), provider, task)
-    results = [
-        _classify_paper(client, provider, r.title, str(r.abstract), task=task)
-        for r in df.itertuples()
-    ]
+    results: list[dict] = []
+    for i, r in enumerate(tqdm(df.itertuples(), total=len(df), desc=f"{provider}/{task}")):
+        res = _classify_paper(client, provider, r.title, str(r.abstract), task=task)
+        results.append(res.model_dump())
 
-    res_df = pd.DataFrame([r.model_dump() for r in results]).rename(
-        columns=lambda c: f"llm_{c}"
-    )
+        if checkpoint_path and (i + 1) % checkpoint_every == 0:
+            _save_checkpoint(df, results, checkpoint_path)
+
+    if checkpoint_path:
+        _save_checkpoint(df, results, checkpoint_path)
+
+    res_df = pd.DataFrame(results).rename(columns=lambda c: f"llm_{c}")
     return pd.concat([df.reset_index(drop=True), res_df], axis=1)
+
+
+async def _classify_paper_async(
+    client,
+    provider: str,
+    title: str,
+    abstract: str,
+    task: str = DEFAULT_TASK,
+) -> BaseModel:
+    """Classify a single paper (async)."""
+    cfg = TASKS[task]
+    try:
+        return await client.chat.completions.create(
+            model=MODEL_MAP[provider],
+            response_model=cfg.response_model,
+            messages=[
+                {"role": "system", "content": cfg.system_prompt},
+                {
+                    "role": "user",
+                    "content": f"Title: {title}\nAbstract: {abstract}",
+                },
+            ],
+            max_retries=3,
+        )
+    except Exception as e:
+        logger.error("Classification failed for '%s': %s", title, e)
+        return cfg.response_model(
+            label=Label.UNSURE,
+            justification="API Error",
+        )
+
+
+async def label_papers_async(
+    df: pd.DataFrame,
+    provider: str = "deepseek",
+    task: str = DEFAULT_TASK,
+    max_concurrent: int = 20,
+    checkpoint_path: str | None = None,
+    checkpoint_every: int = 50,
+) -> pd.DataFrame:
+    """Classify papers concurrently with a semaphore-based pool.
+
+    Args:
+        max_concurrent: Max parallel API calls (default: 20).
+        checkpoint_path: If set, save intermediate results periodically.
+        checkpoint_every: How often to save checkpoints (default: 50).
+    """
+    import asyncio
+
+    from tqdm.auto import tqdm
+
+    client = _create_client(provider, async_=True)
+    sem = asyncio.Semaphore(max_concurrent)
+    results: list[tuple[int, dict]] = []
+    pbar = tqdm(total=len(df), desc=f"{provider}/{task}")
+
+    async def _process(idx: int, title: str, abstract: str):
+        async with sem:
+            res = await _classify_paper_async(client, provider, title, abstract, task=task)
+            results.append((idx, res.model_dump()))
+            pbar.update(1)
+            if checkpoint_path and len(results) % checkpoint_every == 0:
+                _save_checkpoint_indexed(df, results, checkpoint_path)
+
+    tasks = [
+        _process(i, r.title, str(r.abstract))
+        for i, r in enumerate(df.itertuples())
+    ]
+    await asyncio.gather(*tasks)
+    pbar.close()
+
+    # Sort by original order
+    results.sort(key=lambda x: x[0])
+    res_df = pd.DataFrame([r for _, r in results]).rename(columns=lambda c: f"llm_{c}")
+
+    if checkpoint_path:
+        _save_checkpoint_indexed(df, results, checkpoint_path)
+
+    return pd.concat([df.reset_index(drop=True), res_df], axis=1)
+
+
+def _save_checkpoint_indexed(
+    df: pd.DataFrame, results: list[tuple[int, dict]], path: str
+) -> None:
+    sorted_results = sorted(results, key=lambda x: x[0])
+    res_df = pd.DataFrame([r for _, r in sorted_results]).rename(columns=lambda c: f"llm_{c}")
+    idxs = [i for i, _ in sorted_results]
+    out = pd.concat([df.iloc[idxs].reset_index(drop=True), res_df], axis=1)
+    out.to_parquet(path, index=False)
+    logger.info("Checkpoint saved: %d/%d papers → %s", len(results), len(df), path)
+
+
+def _save_checkpoint(df: pd.DataFrame, results: list[dict], path: str) -> None:
+    res_df = pd.DataFrame(results).rename(columns=lambda c: f"llm_{c}")
+    out = pd.concat([df.iloc[: len(results)].reset_index(drop=True), res_df], axis=1)
+    out.to_parquet(path, index=False)
+    logger.info("Checkpoint saved: %d/%d papers → %s", len(results), len(df), path)
 
 
 # ── Mistral Batch API ────────────────────────────────────────────────────
