@@ -18,7 +18,6 @@ mkdir -p "$SCRATCH_DIR/data/splits/ready"
 mkdir -p "$SCRATCH_DIR/data/models"
 cp -r "$PROJECT_DIR"/{src,config,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
 cp -r "$PROJECT_DIR/data/splits/ready/"* "$SCRATCH_DIR/data/splits/ready/"
-cp -r "$PROJECT_DIR/data/models/"* "$SCRATCH_DIR/data/models/" 2>/dev/null || true
 
 cd "$SCRATCH_DIR"
 

@@ -117,10 +117,13 @@ class TransformerClassifier(BaseModel):
         acc = accuracy_score(labels, predictions)
         return {"accuracy": acc, "precision": precision, "recall": recall, "f1": f1}
 
-    def train(self, train_data: Dataset, val_data: Dataset) -> None:
+    def train(
+        self, train_data: Dataset, val_data: Dataset | None = None
+    ) -> None:
         train_tok = self._tokenize(train_data)
-        val_tok = self._tokenize(val_data)
+        val_tok = self._tokenize(val_data) if val_data is not None else None
 
+        has_val = val_tok is not None
         training_args = TrainingArguments(
             output_dir=self.config.output_dir,
             num_train_epochs=self.config.num_train_epochs,
@@ -129,8 +132,8 @@ class TransformerClassifier(BaseModel):
             learning_rate=self.config.learning_rate,
             weight_decay=self.config.weight_decay,
             warmup_steps=self.config.warmup_steps,
-            eval_strategy="epoch",
-            save_strategy="epoch",
+            eval_strategy="epoch" if has_val else "no",
+            save_strategy="epoch" if has_val else "no",
             load_best_model_at_end=False,
             metric_for_best_model="f1",
             greater_is_better=True,
@@ -146,6 +149,16 @@ class TransformerClassifier(BaseModel):
         class_weights = torch.tensor(smoothed, dtype=torch.float32)
         logger.info("Class weights (smoothing=%.1f): %s", s, class_weights)
 
+        callbacks = (
+            [
+                EarlyStoppingCallback(
+                    early_stopping_patience=self.config.early_stopping_patience
+                )
+            ]
+            if has_val
+            else []
+        )
+
         self.trainer = WeightedTrainer(
             class_weights=class_weights,
             model=self.model,
@@ -155,31 +168,30 @@ class TransformerClassifier(BaseModel):
             processing_class=self.tokenizer,
             data_collator=DataCollatorWithPadding(self.tokenizer),
             compute_metrics=self._compute_metrics,
-            callbacks=[
-                EarlyStoppingCallback(
-                    early_stopping_patience=self.config.early_stopping_patience
-                )
-            ],
+            callbacks=callbacks,
         )
 
         logger.info("Starting training — %d epochs", self.config.num_train_epochs)
         self.trainer.train()
 
-        best_ckpt = self.trainer.state.best_model_checkpoint
-        logger.info(
-            "Best checkpoint: %s (F1=%.4f)",
-            best_ckpt,
-            self.trainer.state.best_metric,
-        )
-        # Reload best checkpoint with explicit gamma/beta → weight/bias
-        # remapping (from_pretrained alone doesn't handle this reliably).
-        if best_ckpt:
-            ckpt_path = Path(best_ckpt) / "model.safetensors"
-            state_dict = _remap_legacy_keys(load_safetensors(str(ckpt_path)))
-            self.model.load_state_dict(state_dict)
-            logger.info("Loaded best checkpoint weights from %s", ckpt_path)
-        self.trainer.model = self.model
-        self.best_metric = self.trainer.state.best_metric
+        if has_val:
+            best_ckpt = self.trainer.state.best_model_checkpoint
+            logger.info(
+                "Best checkpoint: %s (F1=%.4f)",
+                best_ckpt,
+                self.trainer.state.best_metric,
+            )
+            # Reload best checkpoint with explicit gamma/beta → weight/bias
+            # remapping (from_pretrained alone doesn't handle this reliably).
+            if best_ckpt:
+                ckpt_path = Path(best_ckpt) / "model.safetensors"
+                state_dict = _remap_legacy_keys(load_safetensors(str(ckpt_path)))
+                self.model.load_state_dict(state_dict)
+                logger.info("Loaded best checkpoint weights from %s", ckpt_path)
+            self.trainer.model = self.model
+            self.best_metric = self.trainer.state.best_metric
+        else:
+            self.best_metric = None
 
     def test(
         self, test_data: Dataset

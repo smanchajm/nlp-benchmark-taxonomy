@@ -36,6 +36,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Skip training; evaluate a saved checkpoint on the test set",
     )
+    parser.add_argument(
+        "--full-train",
+        action="store_true",
+        help="Train on train+val combined (no early stopping, fixed epochs)",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=None,
+        help="Override num_train_epochs from config",
+    )
     return parser.parse_args()
 
 
@@ -49,14 +60,24 @@ def _apply_sweep_overrides(cfg: ClassifierConfig) -> ClassifierConfig:
     return cfg
 
 
-def train(cfg: ClassifierConfig) -> None:
-    """Train + validate only. No test set evaluation."""
+def train(cfg: ClassifierConfig, full: bool = False) -> None:
+    """Train the model. If full=True, train on train+val without early stopping."""
     train_ds = Dataset.from_parquet(str(SPLITS_DIR / "train.parquet"))
-    val_ds = Dataset.from_parquet(str(SPLITS_DIR / "val.parquet"))
+
+    if full:
+        val_ds = Dataset.from_parquet(str(SPLITS_DIR / "val.parquet"))
+        from datasets import concatenate_datasets
+
+        train_ds = concatenate_datasets([train_ds, val_ds])
+        logger.info("Full training on train+val: %d examples", len(train_ds))
+        val_ds = None
+    else:
+        val_ds = Dataset.from_parquet(str(SPLITS_DIR / "val.parquet"))
 
     model = TransformerClassifier(cfg)
     model.train(train_ds, val_ds)
-    wandb.summary["best_val_f1"] = model.best_metric
+    if model.best_metric is not None:
+        wandb.summary["best_val_f1"] = model.best_metric
     model.save(cfg.output_dir)
     logger.info("Model saved to %s", cfg.output_dir)
 
@@ -136,6 +157,8 @@ def test(cfg: ClassifierConfig) -> None:
 def main() -> None:
     args = parse_args()
     cfg = ClassifierConfig.from_yaml(args.config)
+    if args.epochs is not None:
+        cfg.num_train_epochs = args.epochs
 
     model_tag = cfg.pretrained.split("/")[-1]
 
@@ -149,6 +172,13 @@ def main() -> None:
         run_name = f"{model_tag}_test_{datetime.now():%Y%m%d_%H%M}"
         wandb.init(project=cfg.wandb_project, name=run_name, tags=[model_tag, "test"])
         test(cfg)
+    elif args.full_train:
+        run_name = f"{model_tag}_full_{datetime.now():%Y%m%d_%H%M}"
+        wandb.init(
+            project=cfg.wandb_project, name=run_name, tags=[model_tag, "full-train"]
+        )
+        cfg.output_dir = str(Path(cfg.output_dir) / wandb.run.id)
+        train(cfg, full=True)
     else:
         run_name = f"{model_tag}_{datetime.now():%Y%m%d_%H%M}"
         wandb.init(project=cfg.wandb_project, name=run_name, tags=[model_tag])
