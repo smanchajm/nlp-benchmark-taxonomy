@@ -209,3 +209,5 @@ __marimo__/
 # scripts/sync
 scripts/sync.ps1
 scripts/sync-data.ps1
+
+archive/

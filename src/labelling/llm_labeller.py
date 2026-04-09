@@ -7,14 +7,16 @@ from dataclasses import dataclass
 import instructor
 import pandas as pd
 from pydantic import BaseModel, Field
+from tqdm.auto import tqdm
 
 logger = logging.getLogger(__name__)
 
 MODEL_MAP: dict[str, str] = {
-    "mistral": "mistral-small-latest",
+    "mistral": "mistral-large-latest",
     "claude": "claude-3-haiku-20240307",
     "gemini": "gemini-1.5-flash-latest",
     "deepseek": "deepseek-chat",
+    "openrouter": "google/gemma-4-31b-it",
 }
 
 
@@ -24,55 +26,29 @@ class Label(str, enum.Enum):
     UNSURE = "UNSURE"
 
 
-# ── Filter task: simple yes/no classification ────────────────────────────
-
-
-class PaperClassification(BaseModel):
-    """Lightweight schema for the 'filter' task."""
-
-    label: Label
-    justification: str = Field(description="Max 20 words")
-    task_family: str | None = Field(
-        description='Short task label (e.g. "sentiment", "NLI", "NER"). null if no new dataset.',
-        default=None,
-    )
-    is_multitask: bool | None = Field(
-        description="True if multi-task benchmark (e.g. GLUE). null for NEGATIVE.",
-        default=None,
-    )
-
-
-_FILTER_PROMPT = """You classify NLP papers. Determine if the paper INTRODUCES a benchmark/dataset for evaluating TEXT CLASSIFICATION.
-
-POSITIVE: Introduces a benchmark/dataset where a model predicts a discrete label from a fixed set for each text input (or text pair), e.g., sentiment analysis, NLI, topic classification, fact verification, relation classification. Multi-task benchmarks are POSITIVE if ≥75% of sub-tasks are classification.
-
-NEGATIVE if either:
-- The paper does NOT introduce a new evaluation dataset (method/model papers, surveys, training-only datasets, shared tasks without new data).
-- The paper introduces a dataset for a task whose output is not a single discrete label per input: spans, token-level labels, rankings, structured outputs (e.g., NER, parsing, MCQA, extractive QA, generation, alignment, translation, summarization, dialogue, multimodal benchmarks requiring non-textual inputs).
-- The paper introduces a diagnostic test set or meta-evaluation benchmark designed to evaluate a non-classification system (e.g., MT, embeddings, summarization), even if some sub-tasks involve classification.
-
-UNSURE: The paper describes collecting or annotating data but does not clearly frame it as a reusable benchmark, OR it is a multi-task benchmark near the 75% classification boundary or where the abstract does not provide enough detail to quantify the proportion of classification sub-tasks, OR the task definition is ambiguous between classification and a non-classification formulation.
-
-task_family: short label for the task type (e.g., "sentiment", "NLI", "NER", "summarization"). Required when the paper introduces a dataset. Set null when NEGATIVE because no new dataset.
-
-is_multitask: true if the benchmark bundles several sub-tasks into one evaluation suite (e.g. GLUE, SuperGLUE). false otherwise. Set null for NEGATIVE.
-
-Justification: name the task type and explain why it is or is not classification. If NEGATIVE because no new dataset, state that. Max 20 words."""
-
-
-# ── Taxonomy task: rich metadata extraction ──────────────────────────────
+# Taxonomy task
 
 
 class PaperTaxonomy(BaseModel):
     """Rich schema for the 'taxonomy' task.
 
-    Enum-like fields use plain strings to tolerate LLM variation.
-    Expected values are documented in field descriptions for schema guidance.
+    Reasoning is generated first (chain-of-thought) so the LLM commits to a
+    label only after structured analysis.  Enum-like fields use plain strings
+    to tolerate LLM variation.
     """
 
+    reasoning: str = Field(
+        description=(
+            "Brief chain-of-thought: "
+            "1) Does it introduce a new distinct dataset? "
+            "2) Is the task text classification (discrete labels)? "
+            "3) Any exclusion criteria triggered? "
+            "Keep under 100 words."
+        ),
+    )
     label: Label
     justification: str = Field(
-        description="Max 20 words. Name the task type and explain why it is or is not classification.",
+        description="One-sentence summary of the decision. Max 20 words.",
     )
     benchmark_names: list[str] | None = Field(
         description="Names of introduced benchmarks/datasets. Null if NEGATIVE.",
@@ -109,22 +85,38 @@ class PaperTaxonomy(BaseModel):
     is_multitask: bool | None = Field(default=None)
 
 
-_TAXONOMY_PROMPT = """You classify NLP papers. Determine if the paper INTRODUCES a benchmark/dataset for evaluating TEXT CLASSIFICATION.
+_TAXONOMY_PROMPT = """You are an expert NLP researcher classifying academic papers.
+Your task is to determine if the paper explicitly INTRODUCES a NEW benchmark or dataset specifically for TEXT CLASSIFICATION.
 
-POSITIVE: Introduces a benchmark/dataset where a model predicts a discrete label from a fixed set for each text input (or text pair), e.g., sentiment analysis, NLI, topic classification, fact verification, relation classification. Multi-task benchmarks are POSITIVE if ≥75% of sub-tasks are classification.
-NEGATIVE if either:
-- The paper does NOT introduce a new evaluation dataset (method/model papers, surveys, training-only datasets, shared tasks without new data).
-- The paper introduces a dataset for a task whose output is not a single discrete label per input: spans, token-level labels, rankings, structured outputs (e.g., NER, parsing, MCQA, extractive QA, generation, alignment, translation, summarization, dialogue, multimodal benchmarks requiring non-textual inputs).
-- The paper introduces a diagnostic test set or meta-evaluation benchmark designed to evaluate a non-classification system (e.g., MT, embeddings, summarization), even if some sub-tasks involve classification.
-UNSURE: The paper describes collecting or annotating data but does not clearly frame it as a reusable benchmark, OR it is a multi-task benchmark near the 75% classification boundary, OR the task definition is ambiguous between classification and a non-classification formulation.
+Use the `reasoning` field to think step-by-step BEFORE committing to a label.
 
-When NEGATIVE, set all taxonomy fields to null.
-When POSITIVE or UNSURE, fill only the fields whose value is explicitly stated or strongly implied by the title and abstract. Set a field to null if the information is absent or would require guessing — do NOT hallucinate values.
-For task_type and domain, use your best judgment with a short snake_case label — do not constrain to a fixed list.
-For languages, use ISO 639-1 codes or "multilingual"."""
+### STEP 1: CORE ELIGIBILITY (Must meet BOTH criteria)
+1. **New Resource:** The paper must INTRODUCE, RELEASE, or CREATE a new dataset. It must be identifiable as a distinct resource (e.g., named, or described as new labeled data that can be distinguished as a resource). The paper does not need to use the word "benchmark" or claim availability.
+   - *Fail:* Papers that only use, evaluate on, or compare against existing datasets. Shared task overview papers are NEGATIVE unless they release a novel dataset.
+2. **Text Classification Task:** The dataset must be for text classification (predicting a discrete, fixed-set label for a given text or text pair). Examples: sentiment analysis, NLI, topic classification, stance detection, fact verification, relation classification (when entities are given), paraphrase detection, metaphor detection.
+   - *Note on Multi-task:* If it's a multi-task benchmark, ≥75% of the sub-tasks must be text classification.
 
+### STEP 2: EXCLUSION CRITERIA (If ANY apply, the paper is NEGATIVE)
+- **Non-Classification Outputs:** The task requires extracting spans, token-level labels (NER, POS, code-switching at token level), targeted sentiment requiring span extraction, rankings, continuous scores (e.g. semantic similarity on a continuous scale), structured outputs, or generation (summarization, translation, QA, dialogue).
+- **Diagnostic/Meta-Evaluation:** The dataset is a diagnostic test set designed to evaluate a non-classification system (like MT or embeddings), even if some sub-tasks involve classification.
+- **Intermediate Step:** The data collection/annotation is just an intermediate step to train a method, without being presented as a distinct resource.
+- **Ambiguity:** The task definition is ambiguous between classification and a non-classification formulation.
 
-# ── Task configuration registry ──────────────────────────────────────────
+### STEP 3: DECISION RULE
+- If it passes STEP 1 and triggers NONE of the criteria in STEP 2 -> POSITIVE.
+- If it fails STEP 1 OR triggers ANY criteria in STEP 2 -> NEGATIVE.
+- When in doubt -> NEGATIVE.
+
+### EXTRACTION RULES (Only if POSITIVE)
+If POSITIVE, extract the requested taxonomy fields.
+- Only use information explicitly stated or strongly implied by the title and abstract.
+- Do NOT hallucinate values. Set fields to null if the information is absent.
+- For `task_type` and `domain`, use short snake_case labels.
+- For `languages`, use ISO 639-1 codes or "multilingual".
+If NEGATIVE, all extraction fields must be strictly set to null.
+"""
+
+#  Task configuration registry
 
 
 @dataclass(frozen=True)
@@ -151,55 +143,19 @@ class TaskConfig:
 
 
 TASKS: dict[str, TaskConfig] = {
-    "filter": TaskConfig(
-        system_prompt=_FILTER_PROMPT,
-        response_model=PaperClassification,
-        tool_name="classify_paper",
-        tool_description="Return the classification for the paper.",
-    ),
     "taxonomy": TaskConfig(
         system_prompt=_TAXONOMY_PROMPT,
         response_model=PaperTaxonomy,
         tool_name="classify_paper",
         tool_description="Classify an NLP paper and extract taxonomy metadata.",
-        max_tokens=512,
+        max_tokens=1024,
     ),
 }
 
 DEFAULT_TASK = "taxonomy"
 
 
-# ── Core classification ──────────────────────────────────────────────────
-
-
-def _classify_paper(
-    client,
-    provider: str,
-    title: str,
-    abstract: str,
-    task: str = DEFAULT_TASK,
-) -> BaseModel:
-    """Classify a single paper."""
-    cfg = TASKS[task]
-    try:
-        return client.chat.completions.create(
-            model=MODEL_MAP[provider],
-            response_model=cfg.response_model,
-            messages=[
-                {"role": "system", "content": cfg.system_prompt},
-                {
-                    "role": "user",
-                    "content": f"Title: {title}\nAbstract: {abstract}",
-                },
-            ],
-            max_retries=3,
-        )
-    except Exception as e:
-        logger.error("Classification failed for '%s': %s", title, e)
-        return cfg.response_model(
-            label=Label.UNSURE,
-            justification="API Error",
-        )
+# Core classification
 
 
 def _create_client(provider: str, *, async_: bool = False):
@@ -241,41 +197,25 @@ def _create_client(provider: str, *, async_: bool = False):
                 base_url="https://api.deepseek.com",
             )
         )
+    if provider == "openrouter":
+        if async_:
+            from openai import AsyncOpenAI
+
+            return instructor.from_openai(
+                AsyncOpenAI(
+                    api_key=os.getenv("OPENROUTER_API_KEY"),
+                    base_url="https://openrouter.ai/api/v1",
+                )
+            )
+        from openai import OpenAI
+
+        return instructor.from_openai(
+            OpenAI(
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+                base_url="https://openrouter.ai/api/v1",
+            )
+        )
     raise ValueError(f"Unknown provider: {provider!r}")
-
-
-def label_papers(
-    df: pd.DataFrame,
-    provider: str = "mistral",
-    task: str = DEFAULT_TASK,
-    checkpoint_path: str | None = None,
-    checkpoint_every: int = 50,
-) -> pd.DataFrame:
-    """Classify all papers in *df* sequentially with progress bar.
-
-    Args:
-        checkpoint_path: If set, save intermediate results to this parquet path
-                         every *checkpoint_every* papers.
-        checkpoint_every: How often to save checkpoints (default: 50).
-    """
-    from tqdm.auto import tqdm
-
-    client = _create_client(provider)
-
-    logger.info("Classifying %d papers via %s (task=%s)...", len(df), provider, task)
-    results: list[dict] = []
-    for i, r in enumerate(tqdm(df.itertuples(), total=len(df), desc=f"{provider}/{task}")):
-        res = _classify_paper(client, provider, r.title, str(r.abstract), task=task)
-        results.append(res.model_dump())
-
-        if checkpoint_path and (i + 1) % checkpoint_every == 0:
-            _save_checkpoint(df, results, checkpoint_path)
-
-    if checkpoint_path:
-        _save_checkpoint(df, results, checkpoint_path)
-
-    res_df = pd.DataFrame(results).rename(columns=lambda c: f"llm_{c}")
-    return pd.concat([df.reset_index(drop=True), res_df], axis=1)
 
 
 async def _classify_paper_async(
@@ -325,8 +265,6 @@ async def label_papers_async(
     """
     import asyncio
 
-    from tqdm.auto import tqdm
-
     client = _create_client(provider, async_=True)
     sem = asyncio.Semaphore(max_concurrent)
     results: list[tuple[int, dict]] = []
@@ -334,58 +272,57 @@ async def label_papers_async(
 
     async def _process(idx: int, title: str, abstract: str):
         async with sem:
-            res = await _classify_paper_async(client, provider, title, abstract, task=task)
+            res = await _classify_paper_async(
+                client, provider, title, abstract, task=task
+            )
             results.append((idx, res.model_dump()))
             pbar.update(1)
             if checkpoint_path and len(results) % checkpoint_every == 0:
-                _save_checkpoint_indexed(df, results, checkpoint_path)
+                _save_checkpoint_indexed(df, results, checkpoint_path, prefix=provider)
 
     tasks = [
-        _process(i, r.title, str(r.abstract))
-        for i, r in enumerate(df.itertuples())
+        _process(i, r.title, str(r.abstract)) for i, r in enumerate(df.itertuples())
     ]
     await asyncio.gather(*tasks)
     pbar.close()
 
     # Sort by original order
     results.sort(key=lambda x: x[0])
-    res_df = pd.DataFrame([r for _, r in results]).rename(columns=lambda c: f"llm_{c}")
+    res_df = pd.DataFrame([r for _, r in results]).rename(
+        columns=lambda c: f"{provider}_{c}"
+    )
 
     if checkpoint_path:
-        _save_checkpoint_indexed(df, results, checkpoint_path)
+        _save_checkpoint_indexed(df, results, checkpoint_path, prefix=provider)
 
     return pd.concat([df.reset_index(drop=True), res_df], axis=1)
 
 
 def _save_checkpoint_indexed(
-    df: pd.DataFrame, results: list[tuple[int, dict]], path: str
+    df: pd.DataFrame, results: list[tuple[int, dict]], path: str, prefix: str = "llm"
 ) -> None:
     sorted_results = sorted(results, key=lambda x: x[0])
-    res_df = pd.DataFrame([r for _, r in sorted_results]).rename(columns=lambda c: f"llm_{c}")
+    res_df = pd.DataFrame([r for _, r in sorted_results]).rename(
+        columns=lambda c: f"{prefix}_{c}"
+    )
     idxs = [i for i, _ in sorted_results]
     out = pd.concat([df.iloc[idxs].reset_index(drop=True), res_df], axis=1)
     out.to_parquet(path, index=False)
     logger.info("Checkpoint saved: %d/%d papers → %s", len(results), len(df), path)
 
 
-def _save_checkpoint(df: pd.DataFrame, results: list[dict], path: str) -> None:
-    res_df = pd.DataFrame(results).rename(columns=lambda c: f"llm_{c}")
-    out = pd.concat([df.iloc[: len(results)].reset_index(drop=True), res_df], axis=1)
-    out.to_parquet(path, index=False)
-    logger.info("Checkpoint saved: %d/%d papers → %s", len(results), len(df), path)
-
-
-# ── Mistral Batch API ────────────────────────────────────────────────────
+# Mistral Batch API
 
 
 def mistral_batch_submit(
     df: pd.DataFrame,
-    model: str = "mistral-small-latest",
+    model: str = "mistral-large-latest",
     task: str = DEFAULT_TASK,
 ) -> str:
-    """Submit a Mistral Batch API job with auto-generated JSON schema."""
+    """Submit a Mistral Batch API job via file upload (handles large batches)."""
+    import tempfile
+
     from mistralai import Mistral
-    from mistralai.models import BatchRequest
 
     cfg = TASKS[task]
     client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
@@ -394,14 +331,14 @@ def mistral_batch_submit(
         "json_schema": {
             "name": "PaperClass",
             "schema": cfg.response_model.model_json_schema(),
-            "strict": True,
         },
     }
 
-    requests = [
-        BatchRequest(
-            custom_id=str(row["bibkey"]),
-            body={
+    lines = []
+    for _, row in df.iterrows():
+        entry = {
+            "custom_id": str(row["bibkey"]),
+            "body": {
                 "model": model,
                 "messages": [
                     {"role": "system", "content": cfg.system_prompt},
@@ -413,14 +350,30 @@ def mistral_batch_submit(
                 "response_format": schema,
                 "temperature": 0.0,
             },
-        )
-        for _, row in df.iterrows()
-    ]
+        }
+        lines.append(json.dumps(entry, ensure_ascii=False))
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+    ) as f:
+        f.write("\n".join(lines))
+        tmp_path = f.name
+
+    try:
+        with open(tmp_path, "rb") as fh:
+            batch_data = client.files.upload(
+                file={"file_name": "batch.jsonl", "content": fh},
+                purpose="batch",
+            )
+    finally:
+        os.unlink(tmp_path)
 
     job = client.batch.jobs.create(
-        endpoint="/v1/chat/completions", model=model, requests=requests
+        input_files=[batch_data.id],
+        model=model,
+        endpoint="/v1/chat/completions",
     )
-    logger.info("Batch job submitted: %s", job.id)
+    logger.info("Batch job submitted: %s (file: %s)", job.id, batch_data.id)
     return job.id
 
 
@@ -455,7 +408,7 @@ def mistral_batch_results(
     return df.merge(res_df, on="bibkey", how="left")
 
 
-# ── Claude Batch API ─────────────────────────────────────────────────────
+# Claude Batch API
 
 
 def claude_batch_submit(
@@ -469,14 +422,23 @@ def claude_batch_submit(
     cfg = TASKS[task]
     client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+    tool_schema = cfg.tool_schema
+    tool_schema["cache_control"] = {"type": "ephemeral"}
+
     requests = [
         {
             "custom_id": str(row["bibkey"]),
             "params": {
                 "model": model,
                 "max_tokens": cfg.max_tokens,
-                "system": cfg.system_prompt,
-                "tools": [cfg.tool_schema],
+                "system": [
+                    {
+                        "type": "text",
+                        "text": cfg.system_prompt,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                "tools": [tool_schema],
                 "tool_choice": {"type": "tool", "name": cfg.tool_name},
                 "messages": [
                     {
@@ -536,5 +498,175 @@ def claude_batch_results(
 
     res_df = pd.DataFrame(results).rename(
         columns={c: f"claude_{c}" for c in cfg.result_columns}
+    )
+    return df.merge(res_df, on="bibkey", how="left")
+
+
+# Google Batch API
+
+
+def _flatten_google_schema(schema: dict) -> dict:
+    """Convert a Pydantic JSON Schema to a Google-compatible schema.
+
+    Resolves $defs/$ref, replaces anyOf nullable patterns with nullable flag,
+    and strips unsupported keys (title, description, default, $defs).
+    """
+    defs = schema.get("$defs", {})
+
+    def _resolve(node: dict) -> dict:
+        if "$ref" in node:
+            ref_name = node["$ref"].rsplit("/", 1)[-1]
+            return _resolve(defs[ref_name])
+
+        out = {}
+
+        # Handle anyOf nullable pattern: anyOf: [{type: X}, {type: null}]
+        if "anyOf" in node:
+            variants = [v for v in node["anyOf"] if v.get("type") != "null"]
+            has_null = any(v.get("type") == "null" for v in node["anyOf"])
+            if len(variants) == 1:
+                out = _resolve(variants[0])
+                if has_null:
+                    out["nullable"] = True
+                return out
+
+        if "type" in node:
+            out["type"] = node["type"].upper() if node["type"] != "null" else "STRING"
+
+        if "enum" in node:
+            out["enum"] = node["enum"]
+
+        if "properties" in node:
+            out["properties"] = {k: _resolve(v) for k, v in node["properties"].items()}
+
+        if "required" in node:
+            out["required"] = node["required"]
+
+        if "items" in node:
+            out["items"] = _resolve(node["items"])
+
+        if "description" in node:
+            out["description"] = node["description"]
+
+        return out
+
+    return _resolve(schema)
+
+
+def google_batch_submit(
+    df: pd.DataFrame,
+    model: str = "gemini-3-flash-preview",
+    task: str = DEFAULT_TASK,
+) -> str:
+    """Submit a Google GenAI Batch job via file upload."""
+    import tempfile
+
+    from google import genai
+    from google.genai import types
+
+    cfg = TASKS[task]
+    client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
+    schema = _flatten_google_schema(cfg.response_model.model_json_schema())
+    lines = []
+    for _, row in df.iterrows():
+        entry = {
+            "key": str(row["bibkey"]),
+            "request": {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": f"Title: {row['title']}\nAbstract: {row['abstract']}"
+                            }
+                        ]
+                    },
+                ],
+                "systemInstruction": {
+                    "parts": [{"text": cfg.system_prompt}],
+                },
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "responseSchema": schema,
+                    "temperature": 0.0,
+                },
+            },
+        }
+        lines.append(json.dumps(entry, ensure_ascii=False))
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+    ) as f:
+        f.write("\n".join(lines))
+        tmp_path = f.name
+
+    try:
+        uploaded = client.files.upload(
+            file=tmp_path,
+            config=types.UploadFileConfig(
+                display_name=f"batch-{task}",
+                mime_type="jsonl",
+            ),
+        )
+    finally:
+        os.unlink(tmp_path)
+
+    job = client.batches.create(
+        model=model,
+        src=uploaded.name,
+        config=types.CreateBatchJobConfig(
+            display_name=f"nlp-taxonomy-{task}",
+        ),
+    )
+    logger.info("Google batch submitted: %s (file: %s)", job.name, uploaded.name)
+    return job.name
+
+
+def google_batch_results(
+    job_name: str,
+    df: pd.DataFrame,
+    task: str = DEFAULT_TASK,
+) -> pd.DataFrame:
+    """Fetch and merge results from a completed Google GenAI Batch job."""
+    from google import genai
+    from google.genai import types
+
+    cfg = TASKS[task]
+    client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
+    job = client.batches.get(name=job_name)
+    if job.state != types.JobState.JOB_STATE_SUCCEEDED:
+        raise RuntimeError(f"Batch job not finished (state: {job.state})")
+
+    raw = client.files.download(file=job.dest.file_name)
+    results = []
+    errors = 0
+    for line in raw.decode("utf-8").strip().split("\n"):
+        entry = json.loads(line)
+        bibkey = entry.get("key")
+        if entry.get("error"):
+            logger.error("Failed for %s: %s", bibkey, entry["error"])
+            errors += 1
+            continue
+        try:
+            text = entry["response"]["candidates"][0]["content"]["parts"][0]["text"]
+            parsed = cfg.response_model.model_validate_json(text)
+        except Exception as e:
+            logger.warning("Validation error for %s: %s", bibkey, e)
+            errors += 1
+            continue
+        data = parsed.model_dump()
+        data["bibkey"] = bibkey
+        results.append(data)
+
+    if errors:
+        logger.warning(
+            "Skipped %d entries due to errors (out of %d)",
+            errors,
+            errors + len(results),
+        )
+
+    res_df = pd.DataFrame(results).rename(
+        columns={c: f"google_{c}" for c in cfg.result_columns}
     )
     return df.merge(res_df, on="bibkey", how="left")
