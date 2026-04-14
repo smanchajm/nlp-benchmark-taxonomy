@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
-import yaml
 from datasets import Dataset
 from safetensors.torch import load_file as load_safetensors
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
@@ -21,7 +19,8 @@ from transformers import (
     TrainingArguments,
 )
 
-from src.models.base import BaseModel
+from src.classifier.base import BaseModel
+from src.classifier.config import ClassifierConfig
 
 logger = logging.getLogger(__name__)
 
@@ -46,36 +45,6 @@ class WeightedTrainer(Trainer):
             outputs.logits, labels, weight=self.class_weights.to(outputs.logits.device)
         )
         return (loss, outputs) if return_outputs else loss
-
-
-@dataclass
-class ClassifierConfig:
-    pretrained: str
-    max_length: int
-    output_dir: str
-    num_train_epochs: int
-    per_device_train_batch_size: int
-    per_device_eval_batch_size: int
-    learning_rate: float
-    weight_decay: float
-    warmup_steps: int
-    seed: int
-    wandb_project: str
-    num_labels: int
-    class_weight_smoothing: float
-    early_stopping_patience: int
-    bf16: bool = True
-    uncertainty_threshold: float = 0.7
-
-    @classmethod
-    def from_dict(cls, d: dict) -> ClassifierConfig:
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
-
-    @classmethod
-    def from_yaml(cls, path: str | Path) -> ClassifierConfig:
-        with open(path) as f:
-            raw = yaml.safe_load(f)
-        return cls.from_dict(raw["model"])
 
 
 class TransformerClassifier(BaseModel):

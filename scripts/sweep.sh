@@ -15,10 +15,10 @@ cleanup() { rm -rf "$SCRATCH_DIR"; echo "Cleaned up $SCRATCH_DIR"; }
 trap cleanup EXIT
 
 # Copy local project
-mkdir -p "$SCRATCH_DIR/data/splits/ready"
-mkdir -p "$SCRATCH_DIR/data/models"
+mkdir -p "$SCRATCH_DIR/data/classifier/ready"
+mkdir -p "$SCRATCH_DIR/data/classifier/checkpoints"
 cp -r "$PROJECT_DIR"/{src,config,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
-cp -r "$PROJECT_DIR/data/splits/ready/"* "$SCRATCH_DIR/data/splits/ready/"
+cp -r "$PROJECT_DIR/data/classifier/ready/"* "$SCRATCH_DIR/data/classifier/ready/"
 
 cd "$SCRATCH_DIR"
 
@@ -43,4 +43,4 @@ export PYTHONPATH="$SCRATCH_DIR/src:$PYTHONPATH"
 wandb agent "$SWEEP_ID"
 
 # Copy trained models back to persistent storage
-cp -r "$SCRATCH_DIR/data/models/"* "$PROJECT_DIR/data/models/" 2>/dev/null || true
+cp -r "$SCRATCH_DIR/data/classifier/checkpoints/"* "$PROJECT_DIR/data/classifier/checkpoints/" 2>/dev/null || true

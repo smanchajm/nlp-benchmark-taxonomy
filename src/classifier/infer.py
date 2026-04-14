@@ -6,7 +6,8 @@ import pandas as pd
 from datasets import Dataset
 
 from logging_config import setup_logging
-from src.models.classifier import ClassifierConfig, TransformerClassifier
+from src.classifier.config import ClassifierConfig
+from src.classifier.model import TransformerClassifier
 
 logger = logging.getLogger(__name__)
 

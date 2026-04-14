@@ -36,7 +36,7 @@ module load python/3.11 2>/dev/null || true
 source "$VENV_DIR/bin/activate"
 
 export PYTHONPATH="$SCRATCH_DIR/src:$PYTHONPATH"
-python -m src.training.infer "$INPUT" --checkpoint "$CHECKPOINT" --config "$CONFIG"
+python -m src.classifier.infer "$INPUT" --checkpoint "$CHECKPOINT" --config "$CONFIG"
 
 # Copy predictions back
 OUTPUT_NAME="$(basename "${INPUT%.parquet}")_predictions.parquet"

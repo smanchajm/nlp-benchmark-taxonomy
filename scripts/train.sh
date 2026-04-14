@@ -14,10 +14,10 @@ cleanup() { rm -rf "$SCRATCH_DIR"; echo "Cleaned up $SCRATCH_DIR"; }
 trap cleanup EXIT
 
 # Copy local project
-mkdir -p "$SCRATCH_DIR/data/splits/ready"
-mkdir -p "$SCRATCH_DIR/data/models"
+mkdir -p "$SCRATCH_DIR/data/classifier/ready"
+mkdir -p "$SCRATCH_DIR/data/classifier/checkpoints"
 cp -r "$PROJECT_DIR"/{src,config,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
-cp -r "$PROJECT_DIR/data/splits/ready/"* "$SCRATCH_DIR/data/splits/ready/"
+cp -r "$PROJECT_DIR/data/classifier/ready/"* "$SCRATCH_DIR/data/classifier/ready/"
 
 cd "$SCRATCH_DIR"
 
@@ -38,10 +38,10 @@ fi
 
 # Train
 export PYTHONPATH="$SCRATCH_DIR/src:$PYTHONPATH"
-python -m src.training.trainer "$@"
+python -m src.classifier.train "$@"
 
 # Save results
-mkdir -p "$PROJECT_DIR/data/models"
-cp -r "$SCRATCH_DIR/data/models/"* "$PROJECT_DIR/data/models/"
+mkdir -p "$PROJECT_DIR/data/classifier/checkpoints"
+cp -r "$SCRATCH_DIR/data/classifier/checkpoints/"* "$PROJECT_DIR/data/classifier/checkpoints/"
 
-echo "Done. Results copied to $PROJECT_DIR/data/models/"
+echo "Done. Results copied to $PROJECT_DIR/data/classifier/checkpoints/"

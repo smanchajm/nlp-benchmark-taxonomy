@@ -9,12 +9,13 @@ from datasets import Dataset
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
 from logging_config import setup_logging
-from src.models.classifier import TransformerClassifier, ClassifierConfig
+from src.classifier.config import ClassifierConfig
+from src.classifier.model import TransformerClassifier
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = Path("config/base.yaml")
-SPLITS_DIR = Path("data/splits/ready")
+SPLITS_DIR = Path("data/classifier/ready")
 
 
 def parse_args() -> argparse.Namespace:

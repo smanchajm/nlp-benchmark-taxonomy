@@ -16,9 +16,9 @@ cleanup() { rm -rf "$SCRATCH_DIR"; echo "Cleaned up $SCRATCH_DIR"; }
 trap cleanup EXIT
 
 # Copy project + only the needed checkpoint
-mkdir -p "$SCRATCH_DIR/data/splits/ready"
+mkdir -p "$SCRATCH_DIR/data/classifier/ready"
 cp -r "$PROJECT_DIR"/{src,config,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
-cp -r "$PROJECT_DIR/data/splits/ready/"* "$SCRATCH_DIR/data/splits/ready/"
+cp -r "$PROJECT_DIR/data/classifier/ready/"* "$SCRATCH_DIR/data/classifier/ready/"
 mkdir -p "$SCRATCH_DIR/$CHECKPOINT"
 if [ -d "$SCRATCH_DIR/$CHECKPOINT" ] && [ -f "$SCRATCH_DIR/$CHECKPOINT/model.safetensors" ]; then
     echo "Checkpoint already on scratch, skipping copy."
@@ -35,7 +35,7 @@ module load python/3.11 2>/dev/null || true
 source "$VENV_DIR/bin/activate"
 
 export PYTHONPATH="$SCRATCH_DIR/src:$PYTHONPATH"
-python -m src.training.trainer --test-only "$CHECKPOINT" --config "$CONFIG"
+python -m src.classifier.train --test-only "$CHECKPOINT" --config "$CONFIG"
 
 # Copy predictions back
 cp -r "$SCRATCH_DIR/$CHECKPOINT/test_predictions.parquet" "$PROJECT_DIR/$CHECKPOINT/" 2>/dev/null || true

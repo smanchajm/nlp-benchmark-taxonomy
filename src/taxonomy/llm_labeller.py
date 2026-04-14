@@ -94,7 +94,7 @@ Use the `reasoning` field to think step-by-step BEFORE committing to a label.
 1. **New Resource:** The paper must INTRODUCE, RELEASE, or CREATE a new dataset. It must be identifiable as a distinct resource (e.g., named, or described as new labeled data that can be distinguished as a resource). The paper does not need to use the word "benchmark" or claim availability.
    - *Fail:* Papers that only use, evaluate on, or compare against existing datasets. Shared task overview papers are NEGATIVE unless they release a novel dataset.
 2. **Text Classification Task:** The dataset must be for text classification (predicting a discrete, fixed-set label for a given text or text pair). Examples: sentiment analysis, NLI, topic classification, stance detection, fact verification, relation classification (when entities are given), paraphrase detection, metaphor detection.
-   - *Note on Multi-task:* If it's a multi-task benchmark, ≥75% of the sub-tasks must be text classification.
+   - *Note on Multi-task:* If it's a multi-task benchmark, 75% of the sub-tasks must be text classification.
 
 ### STEP 2: EXCLUSION CRITERIA (If ANY apply, the paper is NEGATIVE)
 - **Non-Classification Outputs:** The task requires extracting spans, token-level labels (NER, POS, code-switching at token level), targeted sentiment requiring span extraction, rankings, continuous scores (e.g. semantic similarity on a continuous scale), structured outputs, or generation (summarization, translation, QA, dialogue).
