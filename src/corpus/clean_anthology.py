@@ -1,17 +1,21 @@
+import argparse
 import logging
+from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 
-from logging_config import ROOT, setup_logging
+from logging_config import setup_logging
+from paths import DATA
 
 logger = logging.getLogger(__name__)
 
-INPUT_PATH = ROOT / "data/anthology.parquet"
-OUTPUT_PATH = ROOT / "data/anthology_filtered.parquet"
-OUTPUT_WITH_ABSTRACT_PATH = ROOT / "data/anthology_filtered_with_abstract.parquet"
+DEFAULT_INPUT = DATA / "anthology.parquet"
+DEFAULT_OUTPUT = DATA / "anthology_filtered.parquet"
+DEFAULT_OUTPUT_WITH_ABSTRACT = DATA / "anthology_filtered_with_abstract.parquet"
 
 YEAR_FROM = 2013  # 2013 is the year of word2vec publication, often considered the start of the modern era of NLP.
-YEAR_TO = 2026
+YEAR_TO = datetime.now().year + 1
 
 # All venue IDs from the ACL Anthology ("ws" generic wrapper excluded).
 # Omitted — no papers post-2013: anlp, hlt, muc, tinlap, tipster.
@@ -79,9 +83,13 @@ def _get_venue_category(venues: list[str]) -> str:
     return "unknown"
 
 
-def clean_anthology() -> None:
-    logger.info("Reading %s...", INPUT_PATH)
-    df = pd.read_parquet(INPUT_PATH)
+def clean_anthology(
+    input_path: Path = DEFAULT_INPUT,
+    output_path: Path = DEFAULT_OUTPUT,
+    output_with_abstract_path: Path = DEFAULT_OUTPUT_WITH_ABSTRACT,
+) -> None:
+    logger.info("Reading %s...", input_path)
+    df = pd.read_parquet(input_path)
     n_initial = len(df)
 
     df = df[df["year"].astype(int).between(YEAR_FROM, YEAR_TO)]
@@ -94,9 +102,9 @@ def clean_anthology() -> None:
 
     df["venue_type"] = df["venues"].apply(_get_venue_category)
 
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(OUTPUT_PATH, index=False)
-    logger.info("Saved → %s", OUTPUT_PATH)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(output_path, index=False)
+    logger.info("Saved → %s", output_path)
 
     df_abstracts = df[df["abstract"].notna() & (df["abstract"].str.strip() != "")]
     logger.info(
@@ -104,11 +112,22 @@ def clean_anthology() -> None:
         len(df_abstracts),
         len(df) - len(df_abstracts),
     )
-    OUTPUT_WITH_ABSTRACT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    df_abstracts.to_parquet(OUTPUT_WITH_ABSTRACT_PATH, index=False)
-    logger.info("Saved → %s", OUTPUT_WITH_ABSTRACT_PATH)
+    output_with_abstract_path.parent.mkdir(parents=True, exist_ok=True)
+    df_abstracts.to_parquet(output_with_abstract_path, index=False)
+    logger.info("Saved → %s", output_with_abstract_path)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Filter the ACL Anthology corpus")
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--output-with-abstract", type=Path, default=DEFAULT_OUTPUT_WITH_ABSTRACT
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
     setup_logging()
-    clean_anthology()
+    args = parse_args()
+    clean_anthology(args.input, args.output, args.output_with_abstract)

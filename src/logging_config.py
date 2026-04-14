@@ -1,8 +1,5 @@
 import logging
 import sys
-from pathlib import Path
-
-ROOT = Path(__file__).parent.parent  # src/ → project root
 
 # Third-party loggers that are too noisy at WARNING level for normal use.
 _QUIET_LOGGERS = {

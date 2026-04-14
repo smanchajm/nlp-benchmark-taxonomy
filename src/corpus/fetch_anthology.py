@@ -1,3 +1,4 @@
+import argparse
 import logging
 from pathlib import Path
 
@@ -6,8 +7,11 @@ from acl_anthology.collections.paper import Paper
 import pandas as pd
 
 from logging_config import setup_logging
+from paths import DATA
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_OUTPUT = DATA / "anthology.parquet"
 
 
 def _paper_to_record(paper: Paper) -> dict:
@@ -25,7 +29,7 @@ def _paper_to_record(paper: Paper) -> dict:
     }
 
 
-def fetch_anthology(output_path: Path = Path("data/anthology.parquet")) -> None:
+def fetch_anthology(output_path: Path = DEFAULT_OUTPUT) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info("Loading ACL Anthology from repo...")
@@ -55,6 +59,13 @@ def fetch_anthology(output_path: Path = Path("data/anthology.parquet")) -> None:
     logger.info("Done.")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Fetch ACL Anthology into parquet")
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
     setup_logging()
-    fetch_anthology()
+    args = parse_args()
+    fetch_anthology(args.output)

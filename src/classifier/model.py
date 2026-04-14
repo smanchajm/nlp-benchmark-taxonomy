@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 
@@ -19,7 +17,6 @@ from transformers import (
     TrainingArguments,
 )
 
-from src.classifier.base import BaseModel
 from src.classifier.config import ClassifierConfig
 
 logger = logging.getLogger(__name__)
@@ -47,18 +44,14 @@ class WeightedTrainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 
-class TransformerClassifier(BaseModel):
+class TransformerClassifier:
     def __init__(self, config: ClassifierConfig) -> None:
-        super().__init__(config)
+        self.config = config
         self.tokenizer = AutoTokenizer.from_pretrained(config.pretrained)
         self.model = AutoModelForSequenceClassification.from_pretrained(
             config.pretrained, num_labels=config.num_labels
         )
         self.trainer: Trainer | None = None
-
-    @property
-    def device(self) -> torch.device:
-        return next(self.model.parameters()).device
 
     def _tokenize(self, dataset: Dataset) -> Dataset:
         has_title = "title" in dataset.column_names
@@ -86,9 +79,7 @@ class TransformerClassifier(BaseModel):
         acc = accuracy_score(labels, predictions)
         return {"accuracy": acc, "precision": precision, "recall": recall, "f1": f1}
 
-    def train(
-        self, train_data: Dataset, val_data: Dataset | None = None
-    ) -> None:
+    def train(self, train_data: Dataset, val_data: Dataset | None = None) -> None:
         train_tok = self._tokenize(train_data)
         val_tok = self._tokenize(val_data) if val_data is not None else None
 
@@ -216,7 +207,3 @@ class TransformerClassifier(BaseModel):
             data_collator=DataCollatorWithPadding(self.tokenizer),
             compute_metrics=self._compute_metrics,
         )
-
-    def push_to_hf_hub(self, repo_id: str) -> None:
-        self.model.push_to_hub(repo_id)
-        self.tokenizer.push_to_hub(repo_id)

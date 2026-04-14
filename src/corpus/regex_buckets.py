@@ -1,14 +1,7 @@
 import logging
 import re
-import sys
-from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import pandas as pd
-
-sys.path.insert(0, str(Path(__file__).parents[1]))
-from logging_config import setup_logging
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -198,16 +191,14 @@ def assign_bucket(row: dict[str, int]) -> str:
 
 
 def stratified_bucket_sample(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     bucket_col: str = "bucket",
     n_a: int = 400,
     n_b: int = 400,
     n_c: int = 300,
     seed: int = 42,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Sample papers stratified by bucket and year."""
-    import pandas as pd
-
     samples = []
     for bucket, n in [("A", n_a), ("B", n_b), ("C", n_c)]:
         bucket_df = df[df[bucket_col] == bucket]
@@ -229,7 +220,3 @@ def stratified_bucket_sample(
     logger.info("Total sampled: %d", len(result))
     logger.info("Per bucket:\n%s", result[bucket_col].value_counts())
     return result
-
-
-if __name__ == "__main__":
-    setup_logging()
