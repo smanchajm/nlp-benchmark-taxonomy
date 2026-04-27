@@ -18,6 +18,7 @@ MODEL_MAP: dict[str, str] = {
     "gemini": "gemini-1.5-flash-latest",
     "deepseek": "deepseek-chat",
     "openrouter": "google/gemma-4-31b-it",
+    "openai": "gpt-5.4-mini",
 }
 
 
@@ -55,7 +56,10 @@ def create_client(provider: str, *, async_: bool = False):
         from openai import OpenAI
 
         return instructor.from_openai(
-            OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
+            OpenAI(
+                api_key=os.getenv("DEEPSEEK_API_KEY"),
+                base_url="https://api.deepseek.com",
+            )
         )
     if provider == "openrouter":
         if async_:
@@ -70,32 +74,47 @@ def create_client(provider: str, *, async_: bool = False):
         from openai import OpenAI
 
         return instructor.from_openai(
-            OpenAI(api_key=os.getenv("OPENROUTER_API_KEY"), base_url="https://openrouter.ai/api/v1")
+            OpenAI(
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+                base_url="https://openrouter.ai/api/v1",
+            )
         )
     raise ValueError(f"Unknown provider: {provider!r}")
 
 
-
-async def _classify_paper_async(client, provider: str, title: str, abstract: str, task: str = DEFAULT_TASK):
+async def _classify_paper_async(
+    client, provider: str, title: str, abstract: str, task: str = DEFAULT_TASK
+):
     cfg = TASKS[task]
+    paper_text = f"Title: {title}\nAbstract: {abstract}"
+    user_prompt = cfg.render_user_prompt(paper_text)
     try:
         return await client.chat.completions.create(
             model=MODEL_MAP[provider],
             response_model=cfg.response_model,
             messages=[
                 {"role": "system", "content": cfg.system_prompt},
-                {"role": "user", "content": f"Title: {title}\nAbstract: {abstract}"},
+                {"role": "user", "content": user_prompt},
             ],
             max_retries=3,
         )
     except Exception as e:
         logger.error("Classification failed for '%s': %s", title, e)
-        return cfg.response_model(label=Label.UNSURE, justification="API Error")
+        model_fields = cfg.response_model.model_fields
+        if "label" in model_fields and "justification" in model_fields:
+            return cfg.response_model.model_construct(
+                label=Label.UNSURE, justification="API Error"
+            )
+        return cfg.response_model.model_construct()
 
 
-def _save_checkpoint_indexed(df: pd.DataFrame, results: list[tuple[int, dict]], path: str, prefix: str = "llm") -> None:
+def _save_checkpoint_indexed(
+    df: pd.DataFrame, results: list[tuple[int, dict]], path: str, prefix: str = "llm"
+) -> None:
     sorted_results = sorted(results, key=lambda x: x[0])
-    res_df = pd.DataFrame([r for _, r in sorted_results]).rename(columns=lambda c: f"{prefix}_{c}")
+    res_df = pd.DataFrame([r for _, r in sorted_results]).rename(
+        columns=lambda c: f"{prefix}_{c}"
+    )
     idxs = [i for i, _ in sorted_results]
     out = pd.concat([df.iloc[idxs].reset_index(drop=True), res_df], axis=1)
     out.to_parquet(path, index=False)
@@ -118,24 +137,31 @@ async def label_papers_async(
 
     async def _process(idx: int, title: str, abstract: str):
         async with sem:
-            res = await _classify_paper_async(client, provider, title, abstract, task=task)
+            res = await _classify_paper_async(
+                client, provider, title, abstract, task=task
+            )
             results.append((idx, res.model_dump()))
             pbar.update(1)
             if checkpoint_path and len(results) % checkpoint_every == 0:
                 _save_checkpoint_indexed(df, results, checkpoint_path, prefix=provider)
 
-    await asyncio.gather(*[_process(i, r.title, str(r.abstract)) for i, r in enumerate(df.itertuples())])
+    await asyncio.gather(
+        *[_process(i, r.title, str(r.abstract)) for i, r in enumerate(df.itertuples())]
+    )
     pbar.close()
 
     results.sort(key=lambda x: x[0])
-    res_df = pd.DataFrame([r for _, r in results]).rename(columns=lambda c: f"{provider}_{c}")
+    res_df = pd.DataFrame([r for _, r in results]).rename(
+        columns=lambda c: f"{provider}_{c}"
+    )
     if checkpoint_path:
         _save_checkpoint_indexed(df, results, checkpoint_path, prefix=provider)
     return pd.concat([df.reset_index(drop=True), res_df], axis=1)
 
 
-
-def mistral_batch_submit(df: pd.DataFrame, model: str = "mistral-large-latest", task: str = DEFAULT_TASK) -> str:
+def mistral_batch_submit(
+    df: pd.DataFrame, model: str = "mistral-large-latest", task: str = DEFAULT_TASK
+) -> str:
     """Submit a Mistral Batch API job via file upload."""
     from mistralai import Mistral
 
@@ -143,37 +169,176 @@ def mistral_batch_submit(df: pd.DataFrame, model: str = "mistral-large-latest", 
     client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
     schema = {
         "type": "json_schema",
-        "json_schema": {"name": "PaperClass", "schema": cfg.response_model.model_json_schema()},
+        "json_schema": {
+            "name": "PaperClass",
+            "schema": cfg.response_model.model_json_schema(),
+        },
     }
-    lines = [
-        json.dumps({
-            "custom_id": str(row["bibkey"]),
-            "body": {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": cfg.system_prompt},
-                    {"role": "user", "content": f"Title: {row['title']}\nAbstract: {row['abstract']}"},
-                ],
-                "response_format": schema,
-                "temperature": 0.0,
-            },
-        }, ensure_ascii=False)
-        for _, row in df.iterrows()
-    ]
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding="utf-8") as f:
+    lines = []
+    for _, row in df.iterrows():
+        paper_text = f"Title: {row['title']}\nAbstract: {row['abstract']}"
+        user_prompt = cfg.render_user_prompt(paper_text)
+        lines.append(
+            json.dumps(
+                {
+                    "custom_id": str(row["bibkey"]),
+                    "body": {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": cfg.system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "response_format": schema,
+                        "temperature": 0.0,
+                    },
+                },
+                ensure_ascii=False,
+            )
+        )
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+    ) as f:
         f.write("\n".join(lines))
         tmp_path = f.name
     try:
         with open(tmp_path, "rb") as fh:
-            batch_data = client.files.upload(file={"file_name": "batch.jsonl", "content": fh}, purpose="batch")
+            batch_data = client.files.upload(
+                file={"file_name": "batch.jsonl", "content": fh}, purpose="batch"
+            )
     finally:
         os.unlink(tmp_path)
-    job = client.batch.jobs.create(input_files=[batch_data.id], model=model, endpoint="/v1/chat/completions")
+    job = client.batch.jobs.create(
+        input_files=[batch_data.id], model=model, endpoint="/v1/chat/completions"
+    )
     logger.info("Mistral batch submitted: %s (file: %s)", job.id, batch_data.id)
     return job.id
 
 
-def mistral_batch_results(job_id: str, df: pd.DataFrame, task: str = DEFAULT_TASK) -> pd.DataFrame:
+def openai_batch_submit(
+    df: pd.DataFrame, model: str = "gpt-5.4-mini", task: str = DEFAULT_TASK
+) -> str:
+    """Submit an OpenAI Batch API job via file upload."""
+    from openai import OpenAI
+
+    cfg = TASKS[task]
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "PaperClass",
+            "schema": cfg.response_model.model_json_schema(),
+        },
+    }
+    lines = []
+    for _, row in df.iterrows():
+        paper_text = f"Title: {row['title']}\nAbstract: {row['abstract']}"
+        user_prompt = cfg.render_user_prompt(paper_text)
+        lines.append(
+            json.dumps(
+                {
+                    "custom_id": str(row["bibkey"]),
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": cfg.system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "response_format": response_format,
+                        "temperature": 0.0,
+                    },
+                },
+                ensure_ascii=False,
+            )
+        )
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+    ) as f:
+        f.write("\n".join(lines))
+        tmp_path = f.name
+    try:
+        with open(tmp_path, "rb") as fh:
+            batch_file = client.files.create(file=fh, purpose="batch")
+    finally:
+        os.unlink(tmp_path)
+    job = client.batches.create(
+        input_file_id=batch_file.id,
+        endpoint="/v1/chat/completions",
+        completion_window="24h",
+    )
+    logger.info("OpenAI batch submitted: %s (file: %s)", job.id, batch_file.id)
+    return job.id
+
+
+def openai_batch_results(
+    job_id: str, df: pd.DataFrame, task: str = DEFAULT_TASK
+) -> pd.DataFrame:
+    """Fetch and merge results from a completed OpenAI Batch job."""
+    from openai import OpenAI
+
+    cfg = TASKS[task]
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    job = client.batches.retrieve(job_id)
+    if job.status != "completed":
+        raise RuntimeError(f"Batch job not finished (status: {job.status})")
+    raw = client.files.content(job.output_file_id).read()
+    results = []
+    errors = 0
+    for line in raw.decode("utf-8").strip().split("\n"):
+        entry = json.loads(line)
+        bibkey = entry["custom_id"]
+        if entry.get("error"):
+            logger.error("Failed for %s: %s", bibkey, entry["error"])
+            errors += 1
+            continue
+        try:
+            content = entry["response"]["body"]["choices"][0]["message"]["content"]
+            content = _normalize_extraction_json(content)
+            parsed = cfg.response_model.model_validate_json(content)
+        except Exception as e:
+            logger.warning("Validation error for %s: %s", bibkey, e)
+            errors += 1
+            continue
+        data = parsed.model_dump()
+        data["bibkey"] = bibkey
+        results.append(data)
+    if errors:
+        logger.warning(
+            "Skipped %d entries due to errors (out of %d)",
+            errors,
+            errors + len(results),
+        )
+    res_df = pd.DataFrame(results).rename(
+        columns={c: f"openai_{c}" for c in cfg.result_columns}
+    )
+    return df.merge(res_df, on="bibkey", how="left")
+
+
+def _normalize_extraction_json(content: str) -> str:
+    """Normalize LLM extraction responses: convert list-valued reasoning to string."""
+    try:
+        obj = json.loads(content)
+        if isinstance(obj.get("reasoning"), list):
+            obj["reasoning"] = " ".join(str(x) for x in obj["reasoning"])
+        return json.dumps(obj)
+    except Exception:
+        return content
+
+
+def _normalize_extraction_dict(obj: dict) -> dict:
+    """Normalize LLM extraction responses (dict form): convert list-valued reasoning to string."""
+    try:
+        if isinstance(obj.get("reasoning"), list):
+            obj["reasoning"] = " ".join(str(x) for x in obj["reasoning"])
+    except Exception:
+        pass
+    return obj
+
+
+def mistral_batch_results(
+    job_id: str, df: pd.DataFrame, task: str = DEFAULT_TASK
+) -> pd.DataFrame:
     """Fetch and merge results from a completed Mistral Batch job."""
     from mistralai import Mistral
 
@@ -184,45 +349,77 @@ def mistral_batch_results(job_id: str, df: pd.DataFrame, task: str = DEFAULT_TAS
         raise RuntimeError(f"Batch job not finished (status: {job.status})")
     output_file = client.files.download(file_id=job.output_file)
     results = []
+    errors = 0
     for line in output_file.read().decode("utf-8").strip().split("\n"):
         entry = json.loads(line)
-        content = entry["response"]["body"]["choices"][0]["message"]["content"]
-        parsed = cfg.response_model.model_validate_json(content)
+        bibkey = entry["custom_id"]
+        if entry.get("error"):
+            logger.error("Failed for %s: %s", bibkey, entry["error"])
+            errors += 1
+            continue
+        try:
+            content = entry["response"]["body"]["choices"][0]["message"]["content"]
+            content = _normalize_extraction_json(content)
+            parsed = cfg.response_model.model_validate_json(content)
+        except Exception as e:
+            logger.warning("Validation error for %s: %s", bibkey, e)
+            errors += 1
+            continue
         data = parsed.model_dump()
-        data["bibkey"] = entry["custom_id"]
+        data["bibkey"] = bibkey
         results.append(data)
-    res_df = pd.DataFrame(results).rename(columns={c: f"mistral_{c}" for c in cfg.result_columns})
+    if errors:
+        logger.warning(
+            "Skipped %d entries due to errors (out of %d)",
+            errors,
+            errors + len(results),
+        )
+    res_df = pd.DataFrame(results).rename(
+        columns={c: f"mistral_{c}" for c in cfg.result_columns}
+    )
     return df.merge(res_df, on="bibkey", how="left")
 
 
-
-def claude_batch_submit(df: pd.DataFrame, model: str = "claude-haiku-4-5-20251001", task: str = DEFAULT_TASK) -> str:
+def claude_batch_submit(
+    df: pd.DataFrame, model: str = "claude-haiku-4-5-20251001", task: str = DEFAULT_TASK
+) -> str:
     """Submit an Anthropic Message Batches job."""
     from anthropic import Anthropic
 
     cfg = TASKS[task]
     client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     tool_schema = {**cfg.tool_schema, "cache_control": {"type": "ephemeral"}}
-    requests = [
-        {
-            "custom_id": str(row["bibkey"]),
-            "params": {
-                "model": model,
-                "max_tokens": cfg.max_tokens,
-                "system": [{"type": "text", "text": cfg.system_prompt, "cache_control": {"type": "ephemeral"}}],
-                "tools": [tool_schema],
-                "tool_choice": {"type": "tool", "name": cfg.tool_name},
-                "messages": [{"role": "user", "content": f"Title: {row['title']}\nAbstract: {row['abstract']}"}],
-            },
-        }
-        for _, row in df.iterrows()
-    ]
+    requests = []
+    for _, row in df.iterrows():
+        paper_text = f"Title: {row['title']}\nAbstract: {row['abstract']}"
+        user_prompt = cfg.render_user_prompt(paper_text)
+        requests.append(
+            {
+                "custom_id": str(row["bibkey"]),
+                "params": {
+                    "model": model,
+                    "max_tokens": cfg.max_tokens,
+                    "system": [
+                        {
+                            "type": "text",
+                            "text": cfg.system_prompt,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
+                    "tools": [tool_schema],
+                    "tool_choice": {"type": "tool", "name": cfg.tool_name},
+                    "messages": [{"role": "user", "content": user_prompt}],
+                },
+            }
+        )
     batch = client.messages.batches.create(requests=requests)
     logger.info("Claude batch submitted: %s", batch.id)
     return batch.id
 
 
-def claude_batch_results(batch_id: str, df: pd.DataFrame, task: str = DEFAULT_TASK) -> pd.DataFrame:
+def claude_batch_results(
+    batch_id: str, df: pd.DataFrame, task: str = DEFAULT_TASK
+) -> pd.DataFrame:
     """Fetch and merge results from a completed Anthropic Message Batch."""
     from anthropic import Anthropic
 
@@ -239,7 +436,9 @@ def claude_batch_results(batch_id: str, df: pd.DataFrame, task: str = DEFAULT_TA
             errors += 1
             continue
         try:
-            parsed = cfg.response_model.model_validate(entry.result.message.content[0].input)
+            parsed = cfg.response_model.model_validate(
+                _normalize_extraction_dict(entry.result.message.content[0].input)
+            )
         except Exception as e:
             logger.warning("Validation error for %s: %s", entry.custom_id, e)
             errors += 1
@@ -248,10 +447,15 @@ def claude_batch_results(batch_id: str, df: pd.DataFrame, task: str = DEFAULT_TA
         data["bibkey"] = entry.custom_id
         results.append(data)
     if errors:
-        logger.warning("Skipped %d entries due to errors (out of %d)", errors, errors + len(results))
-    res_df = pd.DataFrame(results).rename(columns={c: f"claude_{c}" for c in cfg.result_columns})
+        logger.warning(
+            "Skipped %d entries due to errors (out of %d)",
+            errors,
+            errors + len(results),
+        )
+    res_df = pd.DataFrame(results).rename(
+        columns={c: f"claude_{c}" for c in cfg.result_columns}
+    )
     return df.merge(res_df, on="bibkey", how="left")
-
 
 
 def _flatten_google_schema(schema: dict) -> dict:
@@ -291,7 +495,9 @@ def _flatten_google_schema(schema: dict) -> dict:
     return _resolve(schema)
 
 
-def google_batch_submit(df: pd.DataFrame, model: str = "gemini-3-flash-preview", task: str = DEFAULT_TASK) -> str:
+def google_batch_submit(
+    df: pd.DataFrame, model: str = "gemini-3-flash-preview", task: str = DEFAULT_TASK
+) -> str:
     """Submit a Google GenAI Batch job via file upload."""
     from google import genai
     from google.genai import types
@@ -299,28 +505,38 @@ def google_batch_submit(df: pd.DataFrame, model: str = "gemini-3-flash-preview",
     cfg = TASKS[task]
     client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
     schema = _flatten_google_schema(cfg.response_model.model_json_schema())
-    lines = [
-        json.dumps({
-            "key": str(row["bibkey"]),
-            "request": {
-                "contents": [{"parts": [{"text": f"Title: {row['title']}\nAbstract: {row['abstract']}"}]}],
-                "systemInstruction": {"parts": [{"text": cfg.system_prompt}]},
-                "generationConfig": {
-                    "responseMimeType": "application/json",
-                    "responseSchema": schema,
-                    "temperature": 0.0,
+    lines = []
+    for _, row in df.iterrows():
+        paper_text = f"Title: {row['title']}\nAbstract: {row['abstract']}"
+        user_prompt = cfg.render_user_prompt(paper_text)
+        lines.append(
+            json.dumps(
+                {
+                    "key": str(row["bibkey"]),
+                    "request": {
+                        "contents": [{"parts": [{"text": user_prompt}]}],
+                        "systemInstruction": {"parts": [{"text": cfg.system_prompt}]},
+                        "generationConfig": {
+                            "responseMimeType": "application/json",
+                            "responseSchema": schema,
+                            "temperature": 0.0,
+                        },
+                    },
                 },
-            },
-        }, ensure_ascii=False)
-        for _, row in df.iterrows()
-    ]
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding="utf-8") as f:
+                ensure_ascii=False,
+            )
+        )
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+    ) as f:
         f.write("\n".join(lines))
         tmp_path = f.name
     try:
         uploaded = client.files.upload(
             file=tmp_path,
-            config=types.UploadFileConfig(display_name=f"batch-{task}", mime_type="jsonl"),
+            config=types.UploadFileConfig(
+                display_name=f"batch-{task}", mime_type="jsonl"
+            ),
         )
     finally:
         os.unlink(tmp_path)
@@ -333,7 +549,9 @@ def google_batch_submit(df: pd.DataFrame, model: str = "gemini-3-flash-preview",
     return job.name
 
 
-def google_batch_results(job_name: str, df: pd.DataFrame, task: str = DEFAULT_TASK) -> pd.DataFrame:
+def google_batch_results(
+    job_name: str, df: pd.DataFrame, task: str = DEFAULT_TASK
+) -> pd.DataFrame:
     """Fetch and merge results from a completed Google GenAI Batch job."""
     from google import genai
     from google.genai import types
@@ -355,6 +573,7 @@ def google_batch_results(job_name: str, df: pd.DataFrame, task: str = DEFAULT_TA
             continue
         try:
             text = entry["response"]["candidates"][0]["content"]["parts"][0]["text"]
+            text = _normalize_extraction_json(text)
             parsed = cfg.response_model.model_validate_json(text)
         except Exception as e:
             logger.warning("Validation error for %s: %s", bibkey, e)
@@ -364,6 +583,12 @@ def google_batch_results(job_name: str, df: pd.DataFrame, task: str = DEFAULT_TA
         data["bibkey"] = bibkey
         results.append(data)
     if errors:
-        logger.warning("Skipped %d entries due to errors (out of %d)", errors, errors + len(results))
-    res_df = pd.DataFrame(results).rename(columns={c: f"google_{c}" for c in cfg.result_columns})
+        logger.warning(
+            "Skipped %d entries due to errors (out of %d)",
+            errors,
+            errors + len(results),
+        )
+    res_df = pd.DataFrame(results).rename(
+        columns={c: f"google_{c}" for c in cfg.result_columns}
+    )
     return df.merge(res_df, on="bibkey", how="left")
