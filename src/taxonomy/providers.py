@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -8,7 +10,7 @@ import instructor
 import pandas as pd
 from tqdm.auto import tqdm
 
-from src.taxonomy.schemas import DEFAULT_TASK, Label, TASKS
+from src.taxonomy.schemas import DEFAULT_TASK, Label, TASKS, TaskConfig
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,9 @@ def create_client(provider: str, *, async_: bool = False):
     if provider == "mistral":
         from mistralai import Mistral
 
-        return instructor.from_mistral(Mistral(api_key=os.getenv("MISTRAL_API_KEY")))
+        return instructor.from_mistral(
+            Mistral(api_key=os.getenv("MISTRAL_API_KEY")), use_async=async_
+        )
     if provider == "claude":
         from anthropic import AsyncAnthropic
 
@@ -82,22 +86,32 @@ def create_client(provider: str, *, async_: bool = False):
     raise ValueError(f"Unknown provider: {provider!r}")
 
 
+async def call_structured(client, provider: str, cfg: TaskConfig, **render_kwargs):
+    """Generic async structured-output call: render user prompt, hit the API, return parsed model.
+
+    Raises on failure — callers handle errors at their own granularity (the
+    benchmark-eligibility flow keeps an UNSURE fallback; the taxonomy-merge
+    flow lets errors propagate so a bad iteration is visible).
+    """
+    user_prompt = cfg.render_user_prompt(**render_kwargs)
+    return await client.chat.completions.create(
+        model=MODEL_MAP[provider],
+        response_model=cfg.response_model,
+        messages=[
+            {"role": "system", "content": cfg.system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_retries=3,
+    )
+
+
 async def _classify_paper_async(
     client, provider: str, title: str, abstract: str, task: str = DEFAULT_TASK
 ):
     cfg = TASKS[task]
     paper_text = f"Title: {title}\nAbstract: {abstract}"
-    user_prompt = cfg.render_user_prompt(paper_text)
     try:
-        return await client.chat.completions.create(
-            model=MODEL_MAP[provider],
-            response_model=cfg.response_model,
-            messages=[
-                {"role": "system", "content": cfg.system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_retries=3,
-        )
+        return await call_structured(client, provider, cfg, paper_text=paper_text)
     except Exception as e:
         logger.error("Classification failed for '%s': %s", title, e)
         model_fields = cfg.response_model.model_fields
@@ -159,42 +173,42 @@ async def label_papers_async(
     return pd.concat([df.reset_index(drop=True), res_df], axis=1)
 
 
-def mistral_batch_submit(
-    df: pd.DataFrame, model: str = "mistral-large-latest", task: str = DEFAULT_TASK
-) -> str:
-    """Submit a Mistral Batch API job via file upload."""
-    from mistralai import Mistral
-
-    cfg = TASKS[task]
-    client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
+def _mistral_build_batch_lines(
+    items: list[tuple[str, str]], cfg: TaskConfig, model: str
+) -> list[str]:
+    """Build JSONL lines for a Mistral batch job from (custom_id, user_prompt) pairs."""
     schema = {
         "type": "json_schema",
         "json_schema": {
-            "name": "PaperClass",
+            "name": "ResponseSchema",
             "schema": cfg.response_model.model_json_schema(),
         },
     }
-    lines = []
-    for _, row in df.iterrows():
-        paper_text = f"Title: {row['title']}\nAbstract: {row['abstract']}"
-        user_prompt = cfg.render_user_prompt(paper_text)
-        lines.append(
-            json.dumps(
-                {
-                    "custom_id": str(row["bibkey"]),
-                    "body": {
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": cfg.system_prompt},
-                            {"role": "user", "content": user_prompt},
-                        ],
-                        "response_format": schema,
-                        "temperature": 0.0,
-                    },
+    return [
+        json.dumps(
+            {
+                "custom_id": custom_id,
+                "body": {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": cfg.system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "response_format": schema,
+                    "temperature": 0.0,
                 },
-                ensure_ascii=False,
-            )
+            },
+            ensure_ascii=False,
         )
+        for custom_id, user_prompt in items
+    ]
+
+
+def _mistral_upload_and_submit(lines: list[str], model: str) -> str:
+    """Upload JSONL lines and create a Mistral batch job. Returns job_id."""
+    from mistralai import Mistral
+
+    client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
     ) as f:
@@ -212,6 +226,63 @@ def mistral_batch_submit(
     )
     logger.info("Mistral batch submitted: %s (file: %s)", job.id, batch_data.id)
     return job.id
+
+
+def _mistral_fetch_parsed(job_id: str, cfg: TaskConfig) -> dict[str, object]:
+    """Download and parse results from a completed Mistral batch job.
+
+    Returns {custom_id: parsed_model} for successful entries; logs and skips errors.
+    """
+    from mistralai import Mistral
+
+    client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
+    job = client.batch.jobs.get(job_id=job_id)
+    if job.status != "SUCCESS":
+        raise RuntimeError(f"Batch job not finished (status: {job.status})")
+    output_file = client.files.download(file_id=job.output_file)
+    results: dict[str, object] = {}
+    errors = 0
+    for line in output_file.read().decode("utf-8").strip().split("\n"):
+        entry = json.loads(line)
+        custom_id = entry["custom_id"]
+        if entry.get("error"):
+            logger.error("Failed for %s: %s", custom_id, entry["error"])
+            errors += 1
+            continue
+        try:
+            content = entry["response"]["body"]["choices"][0]["message"]["content"]
+            content = _normalize_extraction_json(content)
+            results[custom_id] = cfg.response_model.model_validate_json(content)
+        except Exception as e:
+            logger.warning("Validation error for %s: %s", custom_id, e)
+            errors += 1
+    if errors:
+        logger.warning(
+            "Skipped %d entries due to errors (out of %d)",
+            errors,
+            errors + len(results),
+        )
+    return results
+
+
+def mistral_batch_submit(
+    items: list[tuple[str, dict]],
+    task: str = DEFAULT_TASK,
+    model: str = "mistral-large-latest",
+) -> str:
+    """Submit a Mistral Batch API job.
+
+    Args:
+        items: list of (custom_id, render_kwargs) pairs. render_kwargs are passed
+               to TaskConfig.render_user_prompt(**kwargs) for the given task.
+        task: key into TASKS (e.g. "benchmark_eligibility", "taxonomy_leaf_label").
+        model: Mistral model identifier.
+    """
+    cfg = TASKS[task]
+    rendered = [(cid, cfg.render_user_prompt(**kwargs)) for cid, kwargs in items]
+    return _mistral_upload_and_submit(
+        _mistral_build_batch_lines(rendered, cfg, model), model
+    )
 
 
 def openai_batch_submit(
@@ -316,9 +387,14 @@ def openai_batch_results(
 
 
 def _normalize_extraction_json(content: str) -> str:
-    """Normalize LLM extraction responses: convert list-valued reasoning to string."""
+    """Normalize LLM extraction responses: flatten nested 'properties' and convert list-valued reasoning to string."""
     try:
         obj = json.loads(content)
+        # If the response is wrapped in a "properties" key, flatten it
+        if "properties" in obj and isinstance(obj["properties"], dict):
+            props = obj.pop("properties")
+            obj.update(props)
+        # Convert list-valued reasoning to string
         if isinstance(obj.get("reasoning"), list):
             obj["reasoning"] = " ".join(str(x) for x in obj["reasoning"])
         return json.dumps(obj)
@@ -336,44 +412,24 @@ def _normalize_extraction_dict(obj: dict) -> dict:
     return obj
 
 
+def mistral_batch_fetch(job_id: str, task: str = DEFAULT_TASK) -> dict[str, object]:
+    """Fetch parsed results from a completed Mistral batch job.
+
+    Returns {custom_id: parsed_model} without merging into a DataFrame.
+    Use this when the caller needs direct access to the parsed models (e.g. seed_leaves).
+    """
+    return _mistral_fetch_parsed(job_id, TASKS[task])
+
+
 def mistral_batch_results(
     job_id: str, df: pd.DataFrame, task: str = DEFAULT_TASK
 ) -> pd.DataFrame:
-    """Fetch and merge results from a completed Mistral Batch job."""
-    from mistralai import Mistral
-
+    """Fetch and merge results from a completed Mistral Batch job into a DataFrame."""
     cfg = TASKS[task]
-    client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
-    job = client.batch.jobs.get(job_id=job_id)
-    if job.status != "SUCCESS":
-        raise RuntimeError(f"Batch job not finished (status: {job.status})")
-    output_file = client.files.download(file_id=job.output_file)
-    results = []
-    errors = 0
-    for line in output_file.read().decode("utf-8").strip().split("\n"):
-        entry = json.loads(line)
-        bibkey = entry["custom_id"]
-        if entry.get("error"):
-            logger.error("Failed for %s: %s", bibkey, entry["error"])
-            errors += 1
-            continue
-        try:
-            content = entry["response"]["body"]["choices"][0]["message"]["content"]
-            content = _normalize_extraction_json(content)
-            parsed = cfg.response_model.model_validate_json(content)
-        except Exception as e:
-            logger.warning("Validation error for %s: %s", bibkey, e)
-            errors += 1
-            continue
-        data = parsed.model_dump()
-        data["bibkey"] = bibkey
-        results.append(data)
-    if errors:
-        logger.warning(
-            "Skipped %d entries due to errors (out of %d)",
-            errors,
-            errors + len(results),
-        )
+    parsed_map = _mistral_fetch_parsed(job_id, cfg)
+    results = [
+        {"bibkey": cid, **parsed.model_dump()} for cid, parsed in parsed_map.items()
+    ]
     res_df = pd.DataFrame(results).rename(
         columns={c: f"mistral_{c}" for c in cfg.result_columns}
     )
