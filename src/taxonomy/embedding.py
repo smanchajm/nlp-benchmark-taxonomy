@@ -34,15 +34,26 @@ def compute_embeddings_instruct(
 
 
 def umap_projection(
-    embeddings: list[list[float]], n_neighbors: int = 15, min_dist: float = 0.1
+    embeddings: list[list[float]],
+    n_components: int = 2,
+    n_neighbors: int = 15,
+    min_dist: float = 0.1,
 ) -> list[list[float]]:
     reducer = umap.UMAP(
-        n_neighbors=n_neighbors, min_dist=min_dist, metric="cosine", random_state=42
+        n_components=n_components,
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        metric="cosine",
+        random_state=42,
     )
     projected = reducer.fit_transform(embeddings)
     return projected.tolist()
 
 
-def plot_umap(points):
+def plot_umap(points, labels=None):
     df = pd.DataFrame(points, columns=["x", "y"])
-    sns.scatterplot(data=df, x="x", y="y")
+    if labels is not None:
+        df["label"] = labels
+        sns.scatterplot(data=df, x="x", y="y", hue="label")
+    else:
+        sns.scatterplot(data=df, x="x", y="y")
