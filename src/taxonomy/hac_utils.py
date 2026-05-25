@@ -330,7 +330,7 @@ def dendrogram_purity(
             for b in range(a + 1, len(group)):
                 node = lca(group[a], group[b])
                 leaves = node_leaves[node]
-                purity = sum(labels[l] == lbl for l in leaves) / len(leaves)
+                purity = sum(labels[leave] == lbl for leave in leaves) / len(leaves)
                 total += purity
                 count += 1
 
@@ -344,6 +344,11 @@ class TaxoNode:
     coherence: float
     children: list[TaxoNode] = field(default_factory=list)
     is_outlier: bool = False  # True for asymmetric-split orphan leaves
+    # Optional metadata fields (introduced for LLM-merged trees).
+    label: str | None = None
+    description: str | None = None
+    iteration_created: int | None = None
+    confidence: float | None = None
 
     @property
     def is_leaf(self) -> bool:
@@ -387,6 +392,40 @@ class TaxoNode:
     def outlier_leaves(self) -> list[TaxoNode]:
         """Convenience: list terminal leaves marked as outliers."""
         return [n for n in self._leaf_nodes() if n.is_outlier]
+
+    def to_dict(self) -> dict:
+        """Recursive plain-dict representation (JSON-serializable)."""
+        payload = {
+            "hac_id": int(self.hac_id),
+            "leaves": [int(i) for i in self.leaves],
+            "coherence": float(self.coherence),
+            "is_outlier": bool(self.is_outlier),
+            "children": [c.to_dict() for c in self.children],
+        }
+        # Emit optional metadata only when present to stay backward compatible
+        if self.label is not None:
+            payload["label"] = self.label
+        if self.description is not None:
+            payload["description"] = self.description
+        if self.iteration_created is not None:
+            payload["iteration_created"] = int(self.iteration_created)
+        if self.confidence is not None:
+            payload["confidence"] = float(self.confidence)
+        return payload
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> TaxoNode:
+        return cls(
+            hac_id=int(payload["hac_id"]),
+            leaves=[int(i) for i in payload["leaves"]],
+            coherence=float(payload["coherence"]),
+            is_outlier=bool(payload.get("is_outlier", False)),
+            children=[cls.from_dict(c) for c in payload.get("children", [])],
+            label=payload.get("label"),
+            description=payload.get("description"),
+            iteration_created=payload.get("iteration_created"),
+            confidence=payload.get("confidence"),
+        )
 
 
 def cut_tree_adaptive(
@@ -541,137 +580,200 @@ def plot_taxo_tree(
     title: str = "Adaptive Taxonomy Tree",
 ) -> go.Figure:
     """
-    Tree diagram of a TaxoNode tree (horizontal, root on left).
+    Publication-style tree diagram of a TaxoNode tree (vertical, root on top).
 
-    Leaf nodes show their dominant label. Internal nodes show coherence + size.
-    Node colour = coherence (RdYlGn). `df` must be indexed 0..n-1.
+    Nodes are displayed as labeled boxes (annotation cards) and connected with
+    orthogonal edges for a D3-like hierarchy look. `df` must be indexed 0..n-1.
     """
-    # ── 1. Compute layout positions ──────────────────────────────────────────
-    # x = depth, y = vertical position (leaves spaced 1 apart)
+    # ── 1. Compute top-down tidy layout positions ────────────────────────────
+    # x = breadth, y = depth
+    x_gap = 2.8
+    y_gap = 2.0
     positions: dict[int, tuple[float, float]] = {}
+    depths: dict[int, int] = {}
     leaf_counter: list[float] = [0.0]
 
     def _layout(node: TaxoNode, depth: int) -> None:
+        depths[node.hac_id] = depth
         if node.is_leaf:
-            positions[node.hac_id] = (depth, leaf_counter[0])
-            leaf_counter[0] += 1.0
-        else:
-            for child in node.children:
-                _layout(child, depth + 1)
-            ys = [positions[c.hac_id][1] for c in node.children]
-            positions[node.hac_id] = (depth, sum(ys) / len(ys))
+            positions[node.hac_id] = (leaf_counter[0], depth * y_gap)
+            leaf_counter[0] += x_gap
+            return
+        # Trie les enfants par taille décroissante : gros à gauche, petit à droite
+        node.children.sort(key=lambda c: len(c.leaves), reverse=True)
+        for child in node.children:
+            _layout(child, depth + 1)
+        child_x = [positions[c.hac_id][0] for c in node.children]
+        positions[node.hac_id] = (sum(child_x) / len(child_x), depth * y_gap)
 
     _layout(root, 0)
 
-    # ── 2. Build edge traces ──────────────────────────────────────────────────
-    edge_x: list[float | None] = []
-    edge_y: list[float | None] = []
+    # ── 2. Build orthogonal edges (elbows) grouped by depth ──────────────────
+    palette = ["#7c8cf8", "#a778e8", "#d06ca7", "#e78e58", "#7cb37f", "#5fa7b8"]
+    edge_by_depth: dict[int, tuple[list[float | None], list[float | None]]] = {}
 
     def _add_edges(node: TaxoNode) -> None:
         px, py = positions[node.hac_id]
+        d = depths[node.hac_id]
+        xs, ys = edge_by_depth.setdefault(d, ([], []))
         for child in node.children:
             cx, cy = positions[child.hac_id]
-            # Elbow: horizontal then vertical
-            edge_x.extend([px, cx, cx, None])
-            edge_y.extend([py, py, cy, None])
+            mid_y = (py + cy) / 2.0
+            # Vertical segment, horizontal segment, vertical segment.
+            xs.extend([px, px, cx, cx, None])
+            ys.extend([py, mid_y, mid_y, cy, None])
             _add_edges(child)
 
     _add_edges(root)
 
-    # ── 3. Build node traces ──────────────────────────────────────────────────
+    # ── 3. Collect node labels / hover text ───────────────────────────────────
     def _top_label(leaves: list[int]) -> str:
         counts = df.iloc[leaves][label_col].value_counts()
-        return counts.index[0] if len(counts) else "?"
+        return str(counts.index[0]) if len(counts) else "?"
 
-    node_x, node_y, node_color, node_size = [], [], [], []
-    text_x, text_y, text_labels = [], [], []
-    hover_texts = []
+    def _fmt_label(raw: str, max_len: int = 20) -> str:
+        txt = " ".join(str(raw).split())
+        return txt if len(txt) <= max_len else f"{txt[: max_len - 1]}…"
 
-    def _add_nodes(node: TaxoNode) -> None:
+    node_records: list[tuple[TaxoNode, float, float, int, str, str, int]] = []
+
+    def _collect(node: TaxoNode) -> None:
         x, y = positions[node.hac_id]
-        top = _top_label(node.leaves)
+        d = depths[node.hac_id]
         n = len(node.leaves)
-        node_x.append(x)
-        node_y.append(y)
-        node_color.append(node.coherence)
-        node_size.append(max(6, int(np.sqrt(n) * 3)))
-        hover_texts.append(f"<b>{top}</b><br>n={n}  coh={node.coherence:.2f}")
-        if node.is_leaf:
-            text_x.append(x)
-            text_y.append(y)
-            text_labels.append(f"  {top} (n={n})")
+        top = _top_label(node.leaves)
+        display = node.label if getattr(node, "label", None) else top
+        text = (
+            f"<b>{str(display)}</b><br>"
+            f"n={n} · coh={node.coherence:.2f}"
+            f"{'<br>leaf' if node.is_leaf else ''}"
+        )
+        box = f"{_fmt_label(display)}<br><span style='font-size:10px'>n={n}</span>"
+        node_records.append((node, x, y, d, box, text, len(_fmt_label(display))))
         for child in node.children:
-            _add_nodes(child)
+            _collect(child)
 
-    _add_nodes(root)
+    _collect(root)
 
-    # ── 4. Assemble figure ────────────────────────────────────────────────────
-    n_leaves = int(leaf_counter[0])
+    # ── 4. Assemble figure (frame + edges + boxed labels) ────────────────────
+    n_leaves = max(1, len(root._leaf_nodes()))
+    max_depth = max(depths.values()) if depths else 0
+    max_x = max(x for x, _ in positions.values()) if positions else 0.0
+    max_y = max(y for _, y in positions.values()) if positions else 0.0
+
     fig = go.Figure()
 
-    fig.add_trace(
-        go.Scatter(
-            x=edge_x,
-            y=edge_y,
-            mode="lines",
-            line=dict(color="lightgray", width=1),
-            hoverinfo="skip",
-            showlegend=False,
-        )
+    # Outer frame for "panel" look
+    fig.add_shape(
+        type="rect",
+        xref="x",
+        yref="y",
+        x0=-1.2,
+        x1=max_x + 1.2,
+        y0=-1.0,
+        y1=max_y + 1.1,
+        line=dict(color="#c7ccd5", width=1.3),
+        fillcolor="#f8fafc",
+        layer="below",
     )
 
+    for d, (xs, ys) in edge_by_depth.items():
+        fig.add_trace(
+            go.Scatter(
+                x=xs,
+                y=ys,
+                mode="lines",
+                line=dict(color=palette[d % len(palette)], width=1.15),
+                opacity=0.75,
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    # Invisible points only for hover tooltips.
     fig.add_trace(
         go.Scatter(
-            x=node_x,
-            y=node_y,
+            x=[x for _, x, _, _, _, _, _ in node_records],
+            y=[y for _, _, y, _, _, _, _ in node_records],
             mode="markers",
-            marker=dict(
-                size=node_size,
-                color=node_color,
-                colorscale="RdYlGn",
-                cmin=0.0,
-                cmax=1.0,
-                showscale=True,
-                colorbar=dict(title="Coherence", thickness=12, len=0.5),
-                line=dict(color="gray", width=0.5),
-            ),
-            text=hover_texts,
+            marker=dict(size=14, color="rgba(0,0,0,0)"),
+            text=[t for _, _, _, _, _, t, _ in node_records],
             hovertemplate="%{text}<extra></extra>",
             showlegend=False,
         )
     )
 
-    fig.add_trace(
-        go.Scatter(
-            x=text_x,
-            y=text_y,
-            mode="text",
-            text=text_labels,
-            textposition="middle right",
-            textfont=dict(size=10, family="monospace"),
-            hoverinfo="skip",
-            showlegend=False,
+    for node, x, y, d, box_text, _, _ in node_records:
+        color = palette[d % len(palette)]
+        fill = f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)},0.15)"
+        border = f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)},0.65)"
+        # Stronger visual hierarchy focused on first meaningful level.
+        if d == 1:
+            border_width = 1.8
+            border_pad = 7
+            font_size = 12
+        elif d == 0:
+            border_width = 1.0
+            border_pad = 3
+            font_size = 9
+        else:
+            border_width = 1.2
+            border_pad = 4
+            font_size = 10
+        fig.add_annotation(
+            x=x,
+            y=y,
+            xref="x",
+            yref="y",
+            text=box_text,
+            showarrow=False,
+            align="center",
+            font=dict(
+                size=font_size,
+                color="#0f172a",
+                family="Arial",
+            ),
+            bgcolor=fill,
+            bordercolor=border,
+            borderwidth=border_width,
+            borderpad=border_pad,
         )
-    )
 
-    max_depth = max(x for x, _ in positions.values())
+    # Estimate width needed to prevent overlap (dense levels + long labels).
+    depth_width_px: dict[int, float] = {}
+    for _, _, _, d, _, _, label_len in node_records:
+        box_px = 26 + min(label_len, 20) * 7.0
+        depth_width_px[d] = depth_width_px.get(d, 0.0) + box_px
+    depth_counts: dict[int, int] = {}
+    for _, _, _, d, _, _, _ in node_records:
+        depth_counts[d] = depth_counts.get(d, 0) + 1
+    needed_width_px = 260.0
+    for d, total_boxes in depth_width_px.items():
+        gaps = max(0, depth_counts[d] - 1) * 20.0
+        needed_width_px = max(needed_width_px, total_boxes + gaps + 220.0)
+
     fig.update_layout(
         title=title,
-        height=max(600, 18 * n_leaves),
-        plot_bgcolor="white",
+        width=max(1300, int(160 + 120 * n_leaves), int(needed_width_px)),
+        height=max(620, int(220 + 125 * (max_depth + 1))),
+        plot_bgcolor="#f8fafc",
+        paper_bgcolor="#f8fafc",
+        font=dict(family="Arial", size=11, color="#0f172a"),
         xaxis=dict(
             showgrid=False,
             zeroline=False,
             showticklabels=False,
-            range=[-0.3, max_depth + 8],
+            range=[-1.4, max_x + 1.4],
+            fixedrange=False,
         ),
         yaxis=dict(
             showgrid=False,
             zeroline=False,
             showticklabels=False,
-            range=[-1, n_leaves],
+            range=[max_y + 1.4, -1.2],  # root on top
+            fixedrange=False,
         ),
-        margin=dict(l=20, r=20, t=60, b=20),
+        margin=dict(l=30, r=30, t=90, b=35),
     )
     return fig
 
@@ -682,7 +784,7 @@ def cophenetic_table(
     excluded: frozenset[str] = EXCLUDED_LABELS,
 ) -> pd.DataFrame:
     coph_matrix = squareform(cophenet(Z))
-    unique_labels = [l for l in np.unique(labels) if l not in excluded]
+    unique_labels = [label for label in np.unique(labels) if label not in excluded]
 
     rows = []
     for lbl in unique_labels:
