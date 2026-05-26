@@ -275,7 +275,8 @@ def mistral_batch_submit(
     Args:
         items: list of (custom_id, render_kwargs) pairs. render_kwargs are passed
                to TaskConfig.render_user_prompt(**kwargs) for the given task.
-        task: key into TASKS (e.g. "benchmark_eligibility", "taxonomy_leaf_label").
+        task: key into TASKS (e.g. "benchmark_eligibility",
+              "benchmark_record_extraction").
         model: Mistral model identifier.
     """
     cfg = TASKS[task]
