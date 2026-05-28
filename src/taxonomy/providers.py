@@ -10,7 +10,13 @@ import instructor
 import pandas as pd
 from tqdm.auto import tqdm
 
-from src.taxonomy.schemas import DEFAULT_TASK, Label, TASKS, TaskConfig
+from src.taxonomy.schemas import (
+    DEFAULT_TASK,
+    Label,
+    TASKS,
+    TaskConfig,
+    is_valid_leaf_assignment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +258,11 @@ def _mistral_fetch_parsed(job_id: str, cfg: TaskConfig) -> dict[str, object]:
         try:
             content = entry["response"]["body"]["choices"][0]["message"]["content"]
             content = _normalize_extraction_json(content)
-            results[custom_id] = cfg.response_model.model_validate_json(content)
+            parsed = cfg.response_model.model_validate_json(content)
+            if not _is_valid_parsed_result(parsed, cfg, custom_id):
+                errors += 1
+                continue
+            results[custom_id] = parsed
         except Exception as e:
             logger.warning("Validation error for %s: %s", custom_id, e)
             errors += 1
@@ -372,6 +382,9 @@ def openai_batch_results(
             logger.warning("Validation error for %s: %s", bibkey, e)
             errors += 1
             continue
+        if not _is_valid_parsed_result(parsed, cfg, bibkey):
+            errors += 1
+            continue
         data = parsed.model_dump()
         data["bibkey"] = bibkey
         results.append(data)
@@ -411,6 +424,22 @@ def _normalize_extraction_dict(obj: dict) -> dict:
     except Exception:
         pass
     return obj
+
+
+def _is_valid_parsed_result(parsed: object, cfg: TaskConfig, custom_id: str) -> bool:
+    """Post-fetch validation for task-specific constraints not enforceable in batch."""
+    if cfg.response_model.model_fields.keys() >= {"mother", "leaf"}:
+        mother = getattr(parsed, "mother", None)
+        leaf = getattr(parsed, "leaf", None)
+        if not is_valid_leaf_assignment(mother, leaf):
+            logger.warning(
+                "Invalid taxonomy assignment for %s: mother=%r leaf=%r",
+                custom_id,
+                mother,
+                leaf,
+            )
+            return False
+    return True
 
 
 def mistral_batch_fetch(job_id: str, task: str = DEFAULT_TASK) -> dict[str, object]:
@@ -498,6 +527,9 @@ def claude_batch_results(
             )
         except Exception as e:
             logger.warning("Validation error for %s: %s", entry.custom_id, e)
+            errors += 1
+            continue
+        if not _is_valid_parsed_result(parsed, cfg, entry.custom_id):
             errors += 1
             continue
         data = parsed.model_dump()
@@ -634,6 +666,9 @@ def google_batch_results(
             parsed = cfg.response_model.model_validate_json(text)
         except Exception as e:
             logger.warning("Validation error for %s: %s", bibkey, e)
+            errors += 1
+            continue
+        if not _is_valid_parsed_result(parsed, cfg, str(bibkey)):
             errors += 1
             continue
         data = parsed.model_dump()

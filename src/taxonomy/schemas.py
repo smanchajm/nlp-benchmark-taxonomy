@@ -1,8 +1,10 @@
+import json
 import enum
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Label(str, enum.Enum):
@@ -220,6 +222,110 @@ class CoarseTaskClassification(BaseModel):
     coarse_task: CoarseTask
 
 
+class LeafAssignment(BaseModel):
+    reasoning: str = Field(
+        min_length=40,
+        max_length=3500,
+        description=(
+            "Follow PROCEDURE 1-5: the benchmark's decision and label space; "
+            "the candidate mothers; the boundary rule applied; the chosen leaf."
+        ),
+    )
+    mother: str = Field(description="Exactly one top-category label, or 'other'.")
+    leaf: str | None = Field(
+        default=None,
+        description="Terminal node under the chosen mother; null only if mother='other'.",
+    )
+
+    @model_validator(mode="after")
+    def _leaf_required_except_other(self) -> "LeafAssignment":
+        if self.mother != "other" and self.leaf is None:
+            raise ValueError("leaf must be set unless mother is 'other'")
+        if self.mother == "other" and self.leaf is not None:
+            raise ValueError("leaf must be null when mother is 'other'")
+        return self
+
+
+DEFAULT_MANUAL_TAXONOMY_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "data"
+    / "taxonomy"
+    / "manual_taxonomy_tree.json"
+)
+
+
+def load_manual_taxo(path: str | Path | None = None) -> dict[str, object]:
+    taxo_path = Path(path) if path is not None else DEFAULT_MANUAL_TAXONOMY_PATH
+    with taxo_path.open(encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("Manual taxonomy must be a JSON object.")
+    return data
+
+
+def _taxo_children(node: dict[str, object]) -> list[dict[str, object]]:
+    children = node.get("children") or []
+    if not isinstance(children, list):
+        return []
+    return [child for child in children if isinstance(child, dict)]
+
+
+def _taxo_label(node: dict[str, object]) -> str:
+    return str(node.get("label") or node.get("id") or "unknown").strip()
+
+
+def _format_taxo_node(node: dict[str, object]) -> str:
+    label = _taxo_label(node)
+    description = str(node.get("description") or "").strip()
+    return f"{label}: {description}" if description else label
+
+
+def _build_taxo_block(taxonomy: dict[str, object]) -> str:
+    mothers = _taxo_children(taxonomy) or [taxonomy]
+    lines: list[str] = []
+    for mother in mothers:
+        lines.append(f"- {_format_taxo_node(mother)}")
+        leaves = _taxo_children(mother) or [mother]
+        for leaf in leaves:
+            lines.append(f"  - {_format_taxo_node(leaf)}")
+    return "\n".join(lines)
+
+
+def _build_valid_taxo(taxonomy: dict[str, object]) -> dict[str, set[str]]:
+    mothers = _taxo_children(taxonomy) or [taxonomy]
+    valid: dict[str, set[str]] = {}
+    for mother in mothers:
+        mother_label = _taxo_label(mother)
+        leaves = _taxo_children(mother) or [mother]
+        valid[mother_label] = {_taxo_label(leaf) for leaf in leaves}
+    return valid
+
+
+def is_valid_leaf_assignment(
+    mother: object,
+    leaf: object,
+    valid_taxonomy: dict[str, set[str]] | None = None,
+) -> bool:
+    if mother == "other":
+        return leaf is None
+    if not isinstance(mother, str):
+        return False
+    if leaf is not None and not isinstance(leaf, str):
+        return False
+
+    valid = valid_taxonomy if valid_taxonomy is not None else VALID_TAXONOMY
+    return mother in valid and leaf in valid[mother]
+
+
+try:
+    _MANUAL_TAXO = load_manual_taxo()
+except FileNotFoundError:
+    _MANUAL_TAXO = {"id": "forest_root", "label": "forest_root", "children": []}
+
+TAXO_BLOCK = _build_taxo_block(_MANUAL_TAXO)
+VALID_TAXONOMY = _build_valid_taxo(_MANUAL_TAXO)
+
+
 _TAXONOMY_PROMPT = """You are an expert NLP researcher classifying academic papers.
 Your task is to determine if the paper explicitly INTRODUCES a NEW benchmark or dataset specifically for TEXT CLASSIFICATION.
 
@@ -369,6 +475,41 @@ Respond with ONLY a JSON object, no preamble.
 _COARSE_USER_PROMPT_TEMPLATE = "{paper_text}"
 
 
+_TAXONOMY_LEAF_ASSIGNMENT_PROMPT = """You assign a text-classification benchmark task paraphrase to one terminal node of a FIXED, hand-curated task taxonomy. Scope is validated upstream — the task IS a classification benchmark, do not re-check.
+
+You make ONE decision: the terminal taxonomy leaf whose task mechanism matches the provided paraphrase. The taxonomy has top categories (mothers) and terminal leaves. Always assign to a LEAF. If no terminal leaf fits, set mother to "other" and leaf to null.
+
+# TAXONOMY (mother → leaves, with operational definitions)
+
+{taxonomy_block}
+
+# PROCEDURE (use the reasoning field, in this order)
+1. State the judgment mechanism described by the task paraphrase.
+2. Name the 2-3 candidate MOTHERS it could fall under. If only one is plausible, say so.
+3. Resolve between candidates using the BOUNDARY RULES below. Name the rule you applied.
+4. Within the chosen mother, pick the terminal LEAF whose definition matches.
+5. If no terminal leaf fits, set mother to "other" and leaf to null.
+
+# BOUNDARY RULES (the adjacencies where assignment fails — apply explicitly)
+- Attitude. Sentiment & Opinion = polarity/opinion the text itself expresses, no external target needed. Stance = position toward an EXPLICIT target given alongside the text, not inferred from polarity. Stereotype & Social Bias = generalizing attribution to a social group, even when phrased without hostility. A text can be positive in sentiment yet against a target in stance — classify by WHAT is judged, not surface polarity.
+- Veracity. Fact & Claim = truth of a claim assessed against evidence or world knowledge. Event Factuality = whether an event is presented as actually holding (factuality/modality of the event mention), with no external evidence check. Deception = intent to mislead inferred from the text's own properties, no ground-truth check. Machine-Generated Text = provenance (machine vs human), not truth.
+- Harm. Abusive Language = the text attacks or demeans a person/group (harmful content). Stereotype & Social Bias = group generalization, not necessarily abusive. Social Norm = whether described behavior conforms to a social/moral norm (the norm is the target, not a victim). Mental Health / Wellbeing = the author's psychological state, not harm directed at others.
+- Inference. NLI = entailment/contradiction/neutral between a given premise and hypothesis. Logical Reasoning = validity of a deductive/formal inference. Commonsense Plausibility = plausibility of a situation under world knowledge. Classify by which property is judged: semantic entailment vs formal validity vs plausibility.
+- Non-literal vs Sentiment. Irony, sarcasm, humor, satire, metaphor → Non-literal, even when sarcasm flips sentiment polarity.
+- Conversational. Intent = the goal behind an utterance (what the speaker wants). Dialogue Act = the communicative function of the turn (question, acknowledgment...), independent of content.
+
+Always classify by the JUDGMENT MECHANISM described in the paraphrase, never by the domain, platform, benchmark name, or paper branding.
+
+# OUTPUT
+A single JSON conforming to the schema. No text outside it. reasoning first.
+"""
+
+
+_TAXONOMY_LEAF_ASSIGNMENT_USER_PROMPT_TEMPLATE = """TASK PARAPHRASE:
+{paper_text}
+"""
+
+
 @dataclass(frozen=True)
 class TaskConfig:
     """Bundles prompt, schema, and tool metadata for a labelling task."""
@@ -427,6 +568,18 @@ TASKS: dict[str, TaskConfig] = {
         ),
         max_tokens=2048,
         user_prompt_template=_COARSE_USER_PROMPT_TEMPLATE,
+    ),
+    "taxonomy_leaf_assignment": TaskConfig(
+        system_prompt=_TAXONOMY_LEAF_ASSIGNMENT_PROMPT.format(
+            taxonomy_block=TAXO_BLOCK
+        ),
+        response_model=LeafAssignment,
+        tool_name="assign_leaf",
+        tool_description=(
+            "Assign a classification-benchmark paper to a fixed taxonomy mother/leaf node."
+        ),
+        max_tokens=1024,
+        user_prompt_template=_TAXONOMY_LEAF_ASSIGNMENT_USER_PROMPT_TEMPLATE,
     ),
 }
 
