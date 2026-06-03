@@ -15,8 +15,9 @@ DEFAULT_OUTPUT = DATA / "anthology.parquet"
 
 
 def _paper_to_record(paper: Paper) -> dict:
+    anthology_id = paper.full_id
     return {
-        "id": paper.full_id,
+        "id": anthology_id,
         "bibkey": paper.bibkey,
         "title": paper.title.as_text(),
         "abstract": paper.abstract.as_text() if paper.abstract else None,
@@ -25,6 +26,7 @@ def _paper_to_record(paper: Paper) -> dict:
         "venues": paper.venue_ids,
         "doi": paper.doi,
         "url": paper.web_url,
+        "pdf_url": f"https://aclanthology.org/{anthology_id}.pdf",
         "language": paper.language,
     }
 
@@ -52,6 +54,7 @@ def fetch_anthology(output_path: Path = DEFAULT_OUTPUT) -> None:
             "year": "Int16",
             "doi": "string",
             "url": "string",
+            "pdf_url": "string",
             "language": "string",
         }
     )
