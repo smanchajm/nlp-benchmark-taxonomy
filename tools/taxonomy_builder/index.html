@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Taxonomy Builder</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Taxonomy Builder</h1>
+      <div class="toolbar">
+        <button id="loadLeavesBtn" type="button">Charger feuilles</button>
+        <button id="exportBtn" type="button">Exporter</button>
+        <button id="importSessionBtn" type="button">Charger session</button>
+        <button id="snapshotBtn" type="button">Snapshot</button>
+        <button id="compareBtn" type="button">Comparer snapshots</button>
+        <button id="resetTreeBtn" type="button">Reset arbre</button>
+        <button id="exportSessionBtn" type="button">Exporter session</button>
+        <button id="exportTreeWithLeavesBtn" type="button">
+          Export tree+leaves
+        </button>
+        <button id="exportReviewHtmlBtn" type="button">Export review HTML</button>
+        <button id="exportSupervisorBtn" type="button">Export superviseur</button>
+        <button id="treeViewToggleBtn" type="button">Vue: Liste</button>
+        <label class="checkbox-inline">
+          <input id="boundaryDecisionToggle" type="checkbox" />
+          Marquer assignation frontière
+        </label>
+      </div>
+    </header>
+
+    <main id="layoutRoot" class="layout">
+      <section id="panelLeft" class="panel panel-left">
+        <div class="panel-title-row">
+          <h2>Feuilles HAC</h2>
+          <button id="toggleLeavesPanelBtn" type="button">Replier</button>
+        </div>
+        <div id="leavesPanelBody">
+          <div class="controls-stack">
+            <input
+              id="leafSearchInput"
+              type="text"
+              placeholder="Rechercher label + description..."
+            />
+            <label class="checkbox-inline">
+              <input id="showUnassignedOnly" type="checkbox" checked />
+              Non assignées seulement
+            </label>
+            <label class="checkbox-inline">
+              <input id="showPendingOnly" type="checkbox" />
+              En attente seulement
+            </label>
+            <label class="checkbox-inline">
+              <input id="hidePendingLeaves" type="checkbox" />
+              Masquer en attente
+            </label>
+          </div>
+          <div id="leavesMeta" class="meta-line">0 feuilles</div>
+          <div id="leavesList" class="list-container"></div>
+        </div>
+      </section>
+
+      <section id="panelCenter" class="panel panel-center">
+        <div class="panel-title-row">
+          <h2>Arbre</h2>
+          <button id="toggleCenterFocusBtn" type="button">Focus Arbre</button>
+        </div>
+        <div class="controls-stack">
+          <input
+            id="nodeSearchInput"
+            type="text"
+            placeholder="Rechercher labels + descriptions..."
+          />
+          <label class="checkbox-inline">
+            <input id="showLeavesInTree" type="checkbox" />
+            Afficher feuilles dans l'arbre
+          </label>
+        </div>
+        <div id="treeMeta" class="meta-line">0 noeud</div>
+        <div id="treeContainer" class="tree-container"></div>
+      </section>
+
+      <section id="panelRight" class="panel panel-right">
+        <h2>Inspecteur + Log + Nickerson</h2>
+        <div id="roundManagerCard" class="card"></div>
+
+        <div id="inspector" class="card"></div>
+
+        <div class="card">
+          <h3>Dernieres decisions</h3>
+          <div id="decisionLog" class="log-container"></div>
+        </div>
+
+        <div class="card">
+          <h3>Memo analytique</h3>
+          <textarea
+            id="memoInput"
+            placeholder="Memo de session / rationale (max 300 mots)"
+          ></textarea>
+          <div class="dialog-actions">
+            <button id="saveMemoBtn" type="button">Sauver memo</button>
+          </div>
+        </div>
+
+        <div id="conceptSearchCard" class="card"></div>
+
+        <div id="iterationHistoryCard" class="card"></div>
+
+        <div class="card">
+          <h3>Nickerson</h3>
+          <div id="nickersonPanel" class="nickerson-container"></div>
+          <label class="checkbox-inline">
+            <input id="extensibleCheckbox" type="checkbox" />
+            Extensible (validation manuelle)
+          </label>
+        </div>
+
+        <div id="comparePanel" class="card hidden"></div>
+      </section>
+    </main>
+
+    <div id="contextMenu" class="context-menu hidden"></div>
+
+    <dialog id="decisionDialog">
+      <form id="decisionForm" method="dialog">
+        <h3 id="decisionDialogTitle">Justification</h3>
+        <p id="decisionDialogTarget"></p>
+        <textarea
+          id="decisionJustification"
+          placeholder="Justification (<= 20 mots)"
+          required
+        ></textarea>
+        <div class="dialog-actions">
+          <button id="decisionCancelBtn" value="cancel" type="submit">
+            Annuler
+          </button>
+          <button id="decisionConfirmBtn" value="confirm" type="submit">
+            Confirmer
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <input
+      id="leavesFileInput"
+      type="file"
+      accept=".json,application/json"
+      class="hidden"
+    />
+    <input
+      id="sessionFilesInput"
+      type="file"
+      accept=".json,.csv,application/json,text/csv"
+      multiple
+      class="hidden"
+    />
+
+    <script src="./vendor/d3.v7.min.js?v=20260525-1"></script>
+    <script src="./tree_d3.js?v=20260525-1"></script>
+    <script src="./sunburst_d3.js?v=20260525-1"></script>
+    <script src="./treemap_d3.js?v=20260525-1"></script>
+    <script src="./app.js?v=20260525-1"></script>
+  </body>
+</html>

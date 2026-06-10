@@ -222,6 +222,42 @@ class CoarseTaskClassification(BaseModel):
     coarse_task: CoarseTask
 
 
+THEMATIC_DOMAINS: tuple[str, ...] = (
+    "general",
+    "news",
+    "biomedical",
+    "mental_health",
+    "legal",
+    "scientific",
+    "education",
+    "finance",
+    "e_commerce",
+    "literary",
+    "politics",
+    "linguistics",
+    "other",
+)
+
+
+class DomainAssignment(BaseModel):
+    reasoning: str = Field(
+        min_length=20,
+        description=(
+            "2-3 short sentences: real-world area the text is drawn from (not the task); "
+            "which boundary rule applies. Under 500 characters preferred."
+        ),
+    )
+    thematic_domain: str = Field(
+        description="Exactly one label from THEMATIC_DOMAINS.",
+    )
+
+    @field_validator("thematic_domain", mode="before")
+    @classmethod
+    def _coerce_thematic_domain(cls, v: object) -> str:
+        normalized = str(v).strip().lower().replace(" ", "_").replace("-", "_")
+        return normalized if normalized in THEMATIC_DOMAINS else "other"
+
+
 class LeafAssignment(BaseModel):
     reasoning: str = Field(
         min_length=40,
@@ -509,6 +545,251 @@ _TAXONOMY_LEAF_ASSIGNMENT_USER_PROMPT_TEMPLATE = """TASK PARAPHRASE:
 {paper_text}
 """
 
+_THEMATIC_DOMAIN_ASSIGNMENT_PROMPT = """You assign the APPLICATION DOMAIN of a text-classification
+benchmark, from its title and abstract, using a fixed controlled vocabulary. Choose exactly ONE
+thematic domain.
+
+The thematic domain is the SUBJECT-MATTER AREA the annotated text is about. It is independent of:
+- the TASK (what is predicted),
+- the LANGUAGE of the text,
+- the PLATFORM/channel where the text was posted (that is register, handled separately),
+- the textual GENRE.
+
+### CORE PRINCIPLE
+Decide from what the text content is ABOUT. Then apply the arbitration rules below — they resolve
+the recurring cases where subject-matter is unclear or only carried by the task.
+
+### Controlled vocabulary (choose exactly ONE)
+- general: the text is about no specific subject-matter area. This is the DEFAULT and is common.
+- news: journalistic reporting — the annotated text is press articles or headlines written by
+  journalists. A news article that happens to be about politics stays `news` if the text is
+  journalistic reporting (reserve `politics` for political discourse itself; see below).
+- biomedical: medicine, clinical records, health, pharmacology, public health, neurology.
+- mental_health: psychological distress, depression, anxiety, addiction, suicidality, counseling.
+- legal: law, regulation, contracts, court rulings, government administration, public policy.
+- scientific: assign ONLY when the ANNOTATED TEXT itself is scholarly/technical content
+  (research paper text, mathematical statements). Do NOT assign scientific merely because the
+  benchmark studies language models or is framed as a research evaluation — that describes
+  almost every benchmark. Verb-bias / numeracy probes on ordinary sentences are general.
+- education: pedagogy, educational content, learner/essay assessment.
+- finance: finance, corporate, business, marketing.
+- e_commerce: product reviews, hospitality, tourism, consumer goods.
+- literary: fiction, literature, cultural heritage, historical texts.
+- politics: assign ONLY when the text is PRIMARILY political discourse or directly about the
+  political process — parliamentary records, political speeches, party manifestos, electoral
+  campaign material, or text explicitly about named elections/parties/legislation/government.
+  A topic being publicly debated or societally significant (climate, COVID, military, gender)
+  does NOT by itself make it `politics`; judge the actual dominant subject instead.
+- other: a genuine specific area not covered above (military, gaming, cybersecurity, HR).
+  Use sparingly; never as a substitute for general.
+
+### Arbitration rules (general — apply in order)
+1. TASK IS NOT A DOMAIN. A benchmark whose only specificity is what is predicted — sentiment,
+   stance, emotion, hate, bias, sarcasm, metaphor, irony, entailment, acceptability — does NOT
+   take that phenomenon as its domain. Judge the underlying text's subject matter instead.
+2. CONSTRUCTED-PROBE RULE. If the text is synthetic or crowdsourced specifically to probe a
+   phenomenon and has no real subject matter of its own (e.g. bias/stereotype minimal pairs,
+   diagnostic test items), the domain is general — even if the task targets a social attribute
+   (gender, race, religion). The attribute is the task, not the subject of the text.
+3. LANGUAGE IS NOT A DOMAIN. A benchmark in a non-English language or about a dialect/variety
+   (NLI in Arabic, sentiment in Bangla, dialect data) takes the subject-matter domain of its text
+   (usually general). The language/variety is recorded by a separate facet, not here.
+4. PLATFORM IS NOT A DOMAIN. The posting channel (Twitter, Reddit, Wikipedia, forum) never sets
+   the domain. Judge the subject matter: "depression posts on Reddit" -> mental_health;
+   "tweets with no specific subject" -> general.
+5. MIXED SOURCES -> GENERAL. If the text is drawn from several unrelated areas (e.g. a corpus
+   sampling news + Wikipedia + reviews + political discourse), do NOT pick one of them. A
+   multi-source corpus with no single dominant area is `general`. Assign a specific domain only
+   when ONE area clearly dominates the text content.
+6. SUBJECT MATTER, NOT MENTION. Assign a specific domain only when the text content is genuinely
+   and primarily ABOUT that area, not merely because it mentions a related term or includes it
+   among several sources. When two real areas apply, pick the one the benchmark is primarily
+   built around (named in the title / most developed in the abstract). Only ONE domain is allowed.
+7. NO GUESSING. If the abstract does not establish a specific subject-matter area, choose general.
+   Do not infer a domain from weak cues (dataset name, the task alone, a single keyword).
+8. Reason first in `reasoning` (2-3 short sentences, under 500 characters), then commit.
+
+### Output
+Respond with ONLY a JSON object conforming to the schema. No preamble.
+"""
+
+_THEMATIC_DOMAIN_USER_PROMPT_TEMPLATE = "{title}\n\n{abstract}"
+
+
+LANGUAGE_EVIDENCE = frozenset(
+    {"explicit_mention", "inferred_from_name", "default_assumed"}
+)
+
+
+class LanguageExtraction(BaseModel):
+    reasoning: str = Field(
+        min_length=20,
+        description=(
+            "1-2 short sentences: language(s) of the annotated text and the cue used "
+            "(explicit mention, proper name, script). Under 500 characters preferred."
+        ),
+    )
+    languages: list[str] = Field(
+        description=(
+            "ISO 639-3 codes for the annotated benchmark text, ['mul'] if massively "
+            "multilingual and not enumerable, or ['und'] if no language signal."
+        ),
+    )
+    evidence: str = Field(
+        default="default_assumed",
+        description=(
+            "How the language was determined: explicit_mention | inferred_from_name | "
+            "default_assumed."
+        ),
+    )
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _coerce_evidence(cls, v: object) -> str:
+        normalized = str(v).strip().lower().replace(" ", "_").replace("-", "_")
+        return normalized if normalized in LANGUAGE_EVIDENCE else "default_assumed"
+
+    @field_validator("languages", mode="before")
+    @classmethod
+    def _normalize_languages(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            v = [v]
+        if not isinstance(v, list):
+            return ["und"]
+        codes = [str(c).strip().lower() for c in v if str(c).strip()]
+        return codes if codes else ["und"]
+
+
+_LANGUAGE_ASSIGNMENT_PROMPT = """You extract the LANGUAGE(S) of the annotated text in a
+text-classification benchmark, from its title and abstract. Output ISO 639-3 codes.
+
+The language is that of the BENCHMARK'S TEXT DATA (the labeled documents/sentences/posts),
+NOT the language the paper is written in, nor a language merely mentioned or compared against.
+Example: an English-written paper introducing a Bangla corpus -> ben.
+
+### RULES
+1. List one 639-3 code per language of the labeled text (eng, fra, arb, swh, lao...).
+   Small named set (<=8) -> list each. Massively multilingual, not enumerable (XNLI/XTREME) -> ['mul'].
+2. Use a code ONLY if you are certain it is the real 639-3 code for that language/variety.
+   If unsure of the exact code, back off to the macrolanguage (any Arabic dialect you can't code -> arb)
+   or to ['und']. NEVER invent or guess a code to fit a variety.
+3. Dialect/variety -> closest specific code you are sure of (Levantine Arabic -> apc), else arb.
+4. Code-switched/translated data -> list EVERY language present (['eng','hin']); never collapse to one.
+5. `default_assumed` and ['und'] are locked together: if you cannot point to an explicit
+   mention or a proper-name/script cue, you MUST output ['und'] with evidence='default_assumed'.
+   Do NOT output ['eng'] (or any code) as a default guess — "most NLP benchmarks are English",
+   "AI-generated text is usually English", or domain/topic cues are NOT signals. A real code
+   requires evidence='explicit_mention' or 'inferred_from_name'. When in doubt -> ['und'].
+6. Set evidence: explicit_mention | inferred_from_name | default_assumed.
+7. Reason in 1-2 sentences, then commit.
+
+Respond with ONLY a JSON object conforming to the schema. No preamble."""
+
+_LANGUAGE_ASSIGNMENT_USER_PROMPT_TEMPLATE = "{title}\n\n{abstract}"
+
+
+class ArbitratedLink(BaseModel):
+    url: str | None = Field(
+        default=None,
+        description="Must be a URL appearing verbatim among the candidates; null otherwise.",
+    )
+    host_type: str | None = None
+    is_official: bool = Field(
+        default=False,
+        description="True if introduced or released by this paper.",
+    )
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class LinkArbitration(BaseModel):
+    reasoning: str = Field(
+        min_length=20,
+        description=(
+            "Chosen candidate, deciding context verb, and why others were rejected or accepted "
+            "as official. Under 500 characters preferred."
+        ),
+    )
+    dataset_link: list[ArbitratedLink] = Field(
+        default_factory=list,
+        description="Every official URL of the introduced dataset (e.g. a HF + GitHub mirror). [] if none.",
+    )
+    code_link: list[ArbitratedLink] = Field(
+        default_factory=list,
+        description="Every official URL of the released code. [] if none.",
+    )
+    data_availability: Literal["open", "on_request", "restricted", "none"] = "none"
+
+    @field_validator("dataset_link", "code_link", mode="before")
+    @classmethod
+    def _coerce_link_list(cls, v: object) -> object:
+        # Tolère l'ancien format (objet unique ou null) + le LLM qui renvoie un seul objet -> liste.
+        if v is None:
+            return []
+        if isinstance(v, dict):
+            return [v]
+        return v
+
+
+_LINK_ARBITER_PROMPT = """You arbitrate which candidate URL is the RESOURCE OFFICIALLY INTRODUCED
+by THIS paper — separately for dataset and code. Input: title, abstract, and numbered candidates,
+each with a zone (abstract/body/footnote/back/ref/pdf_annot/metadata) and its context sentence.
+
+### CORE PRINCIPLE
+Decide on the VERB of the context, not the host or URL shape. A link is official only if THIS paper
+presents the resource as its own. A valid GitHub/dataset URL is still REJECTED if it is a dependency,
+a compared resource, or a third-party tool.
+EXCEPTION — no verb needed: a clickable link to a resource host (github, huggingface, zenodo, osf,
+codalab, gitlab) in the ABSTRACT/TITLE or a PAGE-1 clickable footnote (zone `pdf_annot` whose context
+says "page 1", or zone `abstract`) whose URL PATH echoes the paper's own benchmark/dataset name (e.g.
+title "TAAROFBench" <-> huggingface.co/.../TAAROFBENCH) IS the authors' official resource — they post
+it as a logo/shortcut with no sentence. Otherwise: no release verb -> reject.
+
+### OFFICIAL vs REJECT
+- OFFICIAL: author-release language — "we release/introduce/present/build/gather/collect/annotate",
+  or "our {data|corpus|code} is (publicly) available at", "data and models available at".
+- REJECT: "we use/used/based on/trained with" (dependency, tool, framework); "we compare against/
+  following/hosted by/taken from" (compared or prior resource); license/doc/homepage links; funding
+  or compute (HPC/grant) acknowledgements; publisher DOIs; cited references. Zone `ref` is a citation
+  context -> reject unless it is an explicit release of THIS paper's resource.
+
+### RULES (in order)
+1. VERB OVER HOST. Institutional/unknown host + release verb = official; github.com + "we used" = not.
+2. VERBATIM ONLY. Each URL must appear exactly as in a candidate. Never invent, repair, complete, or
+   merge. If none qualifies, return [] for that field.
+3. dataset_link and code_link are LISTS — include EVERY official URL. If the dataset is mirrored on
+   several hosts (e.g. Hugging Face AND GitHub both hosting the data), put ALL of them in dataset_link.
+   Same for code. A repo that holds both data and code goes in both lists. Empty list if none.
+4. FOOTNOTE: context is "{calling sentence} [note] {note text}" — judge on the calling sentence; the
+   note often holds only the URL.
+5. SAME RESOURCE, different path depths -> return the most specific non-garbled one.
+6. Multiple authored releases -> pick the one the paper is built around (title / most of abstract).
+7. AVAILABILITY IS SEPARATE FROM THE LINK. If this paper's own resource has a candidate URL, RETURN it
+   (is_official=true) EVEN under restriction — restriction never nulls the URL. Then set
+   data_availability: "open" = public/direct download; "on_request" = "upon request"/contact authors;
+   "restricted" = agreement/license/IRB/sensitive. "none" only when the paper releases no dataset of its
+   own. Leave the list empty only when no candidate is this paper's resource (the access note alone, no link).
+8. NO GUESSING. A bare URL with no verb is insufficient -> empty list, EXCEPT the abstract/title/page-1
+   named-resource case in CORE PRINCIPLE.
+9. Reason first in `reasoning` (chosen candidate, deciding verb, why others rejected; <500 chars).
+
+### EXAMPLES
+- [footnote] "we gather a custom dataset [note] https://grouplens.org/datasets/..." -> dataset_link,
+  open. Release verb makes it official despite a non-github host.
+- [back] "we used Pyphen (github.com/Kozea/Pyphen)" -> REJECT (dependency).
+- [body] "we compare against CEFRLex (...)" -> REJECT (third-party).
+- [ref] "...trained using fairseq (github.com/facebookresearch/fairseq)" -> REJECT (cited tool).
+- [body] "AfroLID is publicly available at github.com/UBC-NLP/afrolid" -> code_link (+dataset_link if
+  the repo hosts the data), open.
+- [pdf_annot] "[clickable link, page 1]" huggingface.co/datasets/smksaha/apt-eval, title "APT-Eval..."
+  -> dataset_link, is_official, open. Page-1 logo whose path matches the paper's name = authors' release.
+- "we release APT-Eval on HF and GitHub: huggingface.co/datasets/.../apt-eval, github.com/.../apt-eval"
+  -> dataset_link = BOTH urls (mirror); open.
+- "our corpus is available to researchers upon signing an agreement (github.com/x/y)" -> dataset_link =
+  [github.com/x/y], restricted. Keep the URL; restriction is NOT empty.
+- "the dataset is available upon request" with no URL candidate -> dataset_link = [], on_request.
+
+Respond with ONLY a JSON object conforming to the schema. No preamble."""
+
 
 @dataclass(frozen=True)
 class TaskConfig:
@@ -580,6 +861,36 @@ TASKS: dict[str, TaskConfig] = {
         ),
         max_tokens=1024,
         user_prompt_template=_TAXONOMY_LEAF_ASSIGNMENT_USER_PROMPT_TEMPLATE,
+    ),
+    "thematic_domain_assignment": TaskConfig(
+        system_prompt=_THEMATIC_DOMAIN_ASSIGNMENT_PROMPT,
+        response_model=DomainAssignment,
+        tool_name="assign_thematic_domain",
+        tool_description=(
+            "Assign a classification-benchmark paper to one controlled application domain."
+        ),
+        max_tokens=512,
+        user_prompt_template=_THEMATIC_DOMAIN_USER_PROMPT_TEMPLATE,
+    ),
+    "link_arbiter": TaskConfig(
+        system_prompt=_LINK_ARBITER_PROMPT,
+        response_model=LinkArbitration,
+        tool_name="arbitrate_resource_links",
+        tool_description=(
+            "Choose official dataset/code URLs among PDF-extracted link candidates."
+        ),
+        max_tokens=1024,
+        user_prompt_template="{paper_text}",
+    ),
+    "language_assignment": TaskConfig(
+        system_prompt=_LANGUAGE_ASSIGNMENT_PROMPT,
+        response_model=LanguageExtraction,
+        tool_name="extract_benchmark_languages",
+        tool_description=(
+            "Extract ISO 639-3 language codes for the annotated benchmark text from title and abstract."
+        ),
+        max_tokens=256,
+        user_prompt_template=_LANGUAGE_ASSIGNMENT_USER_PROMPT_TEMPLATE,
     ),
 }
 
