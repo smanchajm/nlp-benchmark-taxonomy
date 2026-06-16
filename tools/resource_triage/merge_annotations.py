@@ -16,8 +16,10 @@ from paths import DATA
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE = DATA / "corpus" / "single_task_benchmark_paper.parquet"
-DEFAULT_ANNOTATIONS = DATA / "corpus" / "resource_links" / "resource_annotations.csv"
-DEFAULT_OUTPUT = DATA / "corpus" / "single_task_benchmark_paper_enriched_resources.parquet"
+DEFAULT_ANNOTATIONS = DATA / "corpus" / "papers" / "resource_annotations.csv"
+DEFAULT_OUTPUT = (
+    DATA / "corpus" / "single_task_benchmark_paper_enriched_resources.parquet"
+)
 
 RESOURCE_COLUMNS = [
     "dataset_url",
@@ -78,7 +80,9 @@ def merge_annotations(
         len(touched_papers),
         output_path,
     )
-    filled = base["dataset_url"].notna() & (base["dataset_url"].astype(str).str.strip() != "")
+    filled = base["dataset_url"].notna() & (
+        base["dataset_url"].astype(str).str.strip() != ""
+    )
     logger.info("dataset_url renseigné: %d / %d", int(filled.sum()), len(base))
 
 

@@ -17,9 +17,9 @@ from paths import DATA
 logger = logging.getLogger(__name__)
 
 DEFAULT_PAPERS = DATA / "corpus" / "single_task_benchmark_paper.parquet"
-DEFAULT_TRIAGE = DATA / "corpus" / "resource_links" / "resource_links_triage.csv"
-DEFAULT_SUMMARY = DATA / "corpus" / "resource_links" / "resource_links_summary.csv"
-DEFAULT_OUTPUT = DATA / "corpus" / "resource_links" / "papers_queue.json"
+DEFAULT_TRIAGE = DATA / "corpus" / "papers" / "resource_links_triage.csv"
+DEFAULT_SUMMARY = DATA / "corpus" / "papers" / "resource_links_summary.csv"
+DEFAULT_OUTPUT = DATA / "corpus" / "papers" / "papers_queue.json"
 
 ANTHOLOGY_BASE = "https://aclanthology.org/"
 
@@ -109,7 +109,9 @@ def build_queue(
 
     papers.sort(key=lambda p: (-p["max_score"], -p["n_cand"], p["anthology_id"]))
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(papers, ensure_ascii=False, indent=2), encoding="utf-8")
+    output_path.write_text(
+        json.dumps(papers, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     n_with = sum(1 for p in papers if p["n_cand"] > 0)
     logger.info(
         "Ecrit %d papiers (%d avec candidats) -> %s",

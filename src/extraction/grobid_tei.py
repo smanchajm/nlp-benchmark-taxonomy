@@ -40,7 +40,7 @@ from src.paths import DATA
 logger = logging.getLogger(__name__)
 
 DEFAULT_INPUT = DATA / "corpus" / "single_task_benchmark_paper.parquet"
-DEFAULT_WORK_DIR = DATA / "corpus" / "resource_links"
+DEFAULT_WORK_DIR = DATA / "corpus" / "papers"
 
 REQUEST_SLEEP = 1.0
 GROBID_SLEEP = 0.5
@@ -112,7 +112,9 @@ def _download_pdf(anthology_id: str, pdf_url: str, pdf_dir: Path) -> Path | None
         logger.warning("%s — téléchargement: %s", anthology_id, exc)
         return None
     if response.status_code != 200 or response.content[:4] != b"%PDF":
-        logger.warning("%s — réponse invalide (%s).", anthology_id, response.status_code)
+        logger.warning(
+            "%s — réponse invalide (%s).", anthology_id, response.status_code
+        )
         return None
     out.write_bytes(response.content)
     time.sleep(REQUEST_SLEEP)
@@ -144,7 +146,9 @@ def _check_grobid_alive(base: str) -> None:
         raise RuntimeError(f"GROBID pas prêt ({base}, HTTP {alive.status_code!r}).")
 
 
-def _grobid_tei(anthology_id: str, pdf_path: Path | None, tei_dir: Path, process_url: str) -> Path | None:
+def _grobid_tei(
+    anthology_id: str, pdf_path: Path | None, tei_dir: Path, process_url: str
+) -> Path | None:
     """Un TEI : cache-hit, sinon POST GROBID. None (loggé) si pas de PDF ou échec."""
     out = _tei_path(tei_dir, anthology_id)
     if out.exists():
@@ -179,7 +183,9 @@ def step_grobid_tei(
     process_url = f"{base}/api/processFulltextDocument"
     tei_paths: dict[str, Path | None] = {
         aid: _grobid_tei(aid, pdf_path, tei_dir, process_url)
-        for aid, pdf_path in tqdm(list(pdf_paths.items()), desc="GROBID TEI", unit="paper")
+        for aid, pdf_path in tqdm(
+            list(pdf_paths.items()), desc="GROBID TEI", unit="paper"
+        )
     }
     logger.info(
         "TEI: %d / %d", sum(p is not None for p in tei_paths.values()), len(tei_paths)

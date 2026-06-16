@@ -1,17 +1,12 @@
-"""Build or refresh the single-task benchmark paper corpus parquet.
+"""Build single_task_benchmark_paper parquet (simple, no CLI).
 
-The clustering set (1357 papers) is defined in notebook 8: non-multitask,
-single-record rows from ``mistral_extraction_full``. Task labels come from
-``clustering_set_mistral_leaf_assignments.parquet``; ``thematic_domain`` from
-``clustering_set_mistral_thematic_domains.parquet`` (batch thematic_domain_assignment).
-Legacy extraction ``domain`` / ``domain_raw`` are kept for audit only.
-``benchmark_languages`` / ``language_evidence`` come from batch ``language_assignment``
-(notebook 9); ``language`` remains ACL paper metadata.
+This script always rebuilds the corpus from source parquets, then overwrites
+the output parquet. If output already exists, it logs added/removed/updated
+bibkeys before writing.
 """
 
 from __future__ import annotations
 
-import argparse
 import logging
 import sys
 from pathlib import Path
@@ -24,19 +19,29 @@ from paths import DATA
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TAXONOMY = (
-    DATA / "taxonomy" / "leaf_assignments" / "clustering_set_mistral_leaf_assignments.parquet"
+
+# ---- Paths (edit here if needed) -------------------------------------------------
+
+TAXONOMY_PATH = (
+    DATA
+    / "taxonomy"
+    / "leaf_assignments"
+    / "clustering_set_mistral_leaf_assignments.parquet"
 )
-DEFAULT_THEMATIC_DOMAINS = (
+EXCLUSIONS_PATH = DATA / "taxonomy" / "manual_exclusions.parquet"
+THEMATIC_DOMAINS_PATH = (
     DATA
     / "taxonomy"
     / "domain_assignments"
     / "clustering_set_mistral_thematic_domains.parquet"
 )
-DEFAULT_ANTHOLOGY = DATA / "corpus" / "anthology_enriched_with_bucket.parquet"
-DEFAULT_OUTPUT = DATA / "corpus" / "single_task_benchmark_paper.parquet"
-DEFAULT_RESOURCE_LINKS = DATA / "corpus" / "resource_links.parquet"
-DEFAULT_LANGUAGE_EXTRACTIONS = DATA / "corpus" / "language_extractions.parquet"
+ANTHOLOGY_PATH = DATA / "corpus" / "anthology_enriched_with_bucket.parquet"
+RESOURCE_LINKS_PATH = DATA / "extraction" / "resource_links.parquet"
+LANGUAGE_EXTRACTIONS_PATH = DATA / "extraction" / "language_extractions.parquet"
+OUTPUT_PATH = DATA / "corpus" / "single_task_benchmark_paper.parquet"
+
+
+# ---- Columns --------------------------------------------------------------------
 
 DOMAIN_COLUMNS = ("domain", "domain_raw")
 RESOURCE_LINK_COLUMNS = (
@@ -77,8 +82,13 @@ ANTHOLOGY_COLUMNS = (
 def _pdf_url_from_acl_url(url: str | None) -> str | None:
     if not isinstance(url, str) or not url.strip():
         return None
-    base = url.rstrip("/")
-    return f"{base}.pdf" if base else None
+    return f"{url.rstrip('/')}.pdf"
+
+
+def _require_columns(df: pd.DataFrame, needed: tuple[str, ...] | list[str], name: str) -> None:
+    missing = set(needed) - set(df.columns)
+    if missing:
+        raise ValueError(f"Colonnes manquantes dans {name}: {sorted(missing)}")
 
 
 def load_taxonomy(path: Path) -> pd.DataFrame:
@@ -90,26 +100,82 @@ def load_taxonomy(path: Path) -> pd.DataFrame:
         rename["mistral_leaf"] = "task"
     if rename:
         df = df.rename(columns=rename)
-    missing = set(TAXONOMY_COLUMNS) - set(df.columns)
-    if missing:
-        raise ValueError(f"Colonnes taxonomie manquantes dans {path}: {sorted(missing)}")
+    _require_columns(df, TAXONOMY_COLUMNS, str(path))
     return df[list(TAXONOMY_COLUMNS)].drop_duplicates("bibkey")
 
 
 def load_anthology(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path)
-    missing = set(ANTHOLOGY_COLUMNS) - set(df.columns)
-    if missing:
-        raise ValueError(f"Colonnes anthology manquantes dans {path}: {sorted(missing)}")
-    out = df[list(ANTHOLOGY_COLUMNS)].drop_duplicates("bibkey").rename(columns={"id": "anthology_id"})
+    _require_columns(df, ANTHOLOGY_COLUMNS, str(path))
+    out = (
+        df[list(ANTHOLOGY_COLUMNS)]
+        .drop_duplicates("bibkey")
+        .rename(columns={"id": "anthology_id"})
+    )
     out["pdf_url"] = out["url"].map(_pdf_url_from_acl_url)
     return out
 
 
-def build_corpus(taxonomy_path: Path, anthology_path: Path) -> pd.DataFrame:
-    taxonomy = load_taxonomy(taxonomy_path)
-    anthology = load_anthology(anthology_path)
-    merged = taxonomy.merge(anthology, on="bibkey", how="left", validate="one_to_one")
+def load_thematic_domains(path: Path) -> pd.DataFrame:
+    df = pd.read_parquet(path)
+    source_col = (
+        "mistral_thematic_domain"
+        if "mistral_thematic_domain" in df.columns
+        else "thematic_domain"
+    )
+    _require_columns(df, ["bibkey", source_col], str(path))
+    return (
+        df[["bibkey", source_col]]
+        .rename(columns={source_col: "thematic_domain"})
+        .drop_duplicates("bibkey")
+    )
+
+
+def load_resource_links(path: Path) -> pd.DataFrame:
+    cols = ["anthology_id", *RESOURCE_LINK_COLUMNS]
+    df = pd.read_parquet(path)
+    _require_columns(df, cols, str(path))
+    return df[cols].drop_duplicates("anthology_id")
+
+
+def load_language_extractions(path: Path) -> pd.DataFrame:
+    cols = ["bibkey", *LANGUAGE_COLUMNS]
+    df = pd.read_parquet(path)
+    _require_columns(df, cols, str(path))
+    return df[cols].drop_duplicates("bibkey")
+
+
+def load_exclusions(path: Path) -> set[str]:
+    df = pd.read_parquet(path)
+    _require_columns(df, ["bibkey"], str(path))
+    return set(df["bibkey"].dropna().astype(str))
+
+
+def build() -> pd.DataFrame:
+    taxonomy = load_taxonomy(TAXONOMY_PATH)
+    anthology = load_anthology(ANTHOLOGY_PATH)
+
+    df = taxonomy.merge(anthology, on="bibkey", how="left", validate="one_to_one")
+
+    thematic = load_thematic_domains(THEMATIC_DOMAINS_PATH)
+    df = df.merge(thematic, on="bibkey", how="left", validate="many_to_one")
+
+    links = load_resource_links(RESOURCE_LINKS_PATH)
+    df = df.merge(links, on="anthology_id", how="left", validate="many_to_one")
+
+    languages = load_language_extractions(LANGUAGE_EXTRACTIONS_PATH)
+    df = df.merge(languages, on="bibkey", how="left", validate="many_to_one")
+
+    exclusions = load_exclusions(EXCLUSIONS_PATH)
+    before = len(df)
+    df = df.loc[~df["bibkey"].astype(str).isin(exclusions)].copy()
+    logger.info(
+        "Exclusions: %d lignes retirees (%d -> %d).",
+        before - len(df),
+        before,
+        len(df),
+    )
+
     column_order = [
         "bibkey",
         "anthology_id",
@@ -121,6 +187,7 @@ def build_corpus(taxonomy_path: Path, anthology_path: Path) -> pd.DataFrame:
         "doi",
         "url",
         "language",
+        *LANGUAGE_COLUMNS,
         "venue_type",
         "numcitedby",
         "mother_task",
@@ -128,143 +195,58 @@ def build_corpus(taxonomy_path: Path, anthology_path: Path) -> pd.DataFrame:
         "paraphrase_task",
         "paraphrase_domain",
         *DOMAIN_COLUMNS,
+        "thematic_domain",
         "pdf_url",
+        *RESOURCE_LINK_COLUMNS,
     ]
-    return merged[column_order]
+    return df[column_order]
 
 
-def add_domain_to_existing(corpus_path: Path, taxonomy_path: Path) -> pd.DataFrame:
-    corpus = pd.read_parquet(corpus_path)
-    if "bibkey" not in corpus.columns:
-        raise ValueError(f"Colonne bibkey absente dans {corpus_path}")
+def log_diff_vs_existing(new_df: pd.DataFrame, output_path: Path) -> None:
+    if not output_path.exists():
+        logger.info("Nouveau fichier: %s", output_path)
+        return
 
-    taxonomy = load_taxonomy(taxonomy_path)[["bibkey", *DOMAIN_COLUMNS]]
-    base_cols = [c for c in corpus.columns if c not in DOMAIN_COLUMNS]
-    enriched = corpus[base_cols].merge(
-        taxonomy, on="bibkey", how="left", validate="many_to_one"
+    old_df = pd.read_parquet(output_path)
+    if "bibkey" not in old_df.columns:
+        logger.warning("Ancien fichier sans bibkey, diff impossible.")
+        return
+
+    old = old_df.set_index("bibkey", drop=False)
+    new = new_df.set_index("bibkey", drop=False)
+
+    old_keys = set(old.index)
+    new_keys = set(new.index)
+    added = new_keys - old_keys
+    removed = old_keys - new_keys
+
+    shared = sorted(old_keys & new_keys)
+    common_cols = [c for c in new.columns if c in old.columns and c != "bibkey"]
+    changed = 0
+    for key in shared:
+        left = old.loc[key, common_cols]
+        right = new.loc[key, common_cols]
+        if not left.equals(right):
+            changed += 1
+
+    logger.info(
+        "Diff vs existant - added: %d, removed: %d, updated: %d",
+        len(added),
+        len(removed),
+        changed,
     )
-    if len(enriched) != len(corpus):
-        raise ValueError("Merge a duplique des lignes — verifier les bibkeys taxonomie.")
-
-    if "paraphrase_domain" in base_cols:
-        pos = base_cols.index("paraphrase_domain") + 1
-        ordered = base_cols[:pos] + list(DOMAIN_COLUMNS) + base_cols[pos:]
-        return enriched[ordered]
-    return enriched
-
-
-def load_thematic_domains(path: Path) -> pd.DataFrame:
-    df = pd.read_parquet(path)
-    if "mistral_thematic_domain" in df.columns:
-        source_col = "mistral_thematic_domain"
-    elif "thematic_domain" in df.columns:
-        source_col = "thematic_domain"
-    else:
-        raise ValueError(
-            f"Colonne thematic_domain absente dans {path}: {sorted(df.columns)}"
-        )
-    return (
-        df[["bibkey", source_col]]
-        .rename(columns={source_col: "thematic_domain"})
-        .drop_duplicates("bibkey")
-    )
-
-
-def merge_thematic_domain(df: pd.DataFrame, domains_path: Path) -> pd.DataFrame:
-    if "bibkey" not in df.columns:
-        raise ValueError("Colonne bibkey absente dans le corpus.")
-
-    domains = load_thematic_domains(domains_path)
-    base_cols = [c for c in df.columns if c != "thematic_domain"]
-    enriched = df[base_cols].merge(
-        domains, on="bibkey", how="left", validate="many_to_one"
-    )
-    if len(enriched) != len(df):
-        raise ValueError("Merge a duplique des lignes — verifier les bibkeys domaines.")
-
-    if "domain_raw" in base_cols:
-        pos = base_cols.index("domain_raw") + 1
-        ordered = base_cols[:pos] + ["thematic_domain"] + base_cols[pos:]
-        return enriched[ordered]
-    if "paraphrase_domain" in base_cols:
-        pos = base_cols.index("paraphrase_domain") + 1
-        ordered = base_cols[:pos] + ["thematic_domain"] + base_cols[pos:]
-        return enriched[ordered]
-    return enriched
-
-
-def load_resource_links(path: Path) -> pd.DataFrame:
-    df = pd.read_parquet(path)
-    cols = ["anthology_id", *RESOURCE_LINK_COLUMNS]
-    missing = set(cols) - set(df.columns)
-    if missing:
-        raise ValueError(f"Colonnes resource_links manquantes dans {path}: {sorted(missing)}")
-    return df[list(cols)].drop_duplicates("anthology_id")
-
-
-def load_language_extractions(path: Path) -> pd.DataFrame:
-    df = pd.read_parquet(path)
-    cols = ["bibkey", *LANGUAGE_COLUMNS]
-    missing = set(cols) - set(df.columns)
-    if missing:
-        raise ValueError(
-            f"Colonnes language_extractions manquantes dans {path}: {sorted(missing)}"
-        )
-    return df[list(cols)].drop_duplicates("bibkey")
-
-
-def merge_language_extractions(df: pd.DataFrame, languages_path: Path) -> pd.DataFrame:
-    if "bibkey" not in df.columns:
-        raise ValueError("Colonne bibkey absente dans le corpus.")
-
-    languages = load_language_extractions(languages_path)
-    base_cols = [c for c in df.columns if c not in LANGUAGE_COLUMNS]
-    enriched = df[base_cols].merge(
-        languages, on="bibkey", how="left", validate="many_to_one"
-    )
-    if len(enriched) != len(df):
-        raise ValueError("Merge a duplique des lignes — verifier les bibkeys langues.")
-
-    if "language" in base_cols:
-        pos = base_cols.index("language") + 1
-        ordered = base_cols[:pos] + list(LANGUAGE_COLUMNS) + base_cols[pos:]
-        return enriched[ordered]
-    return enriched
-
-
-def merge_resource_links(df: pd.DataFrame, links_path: Path) -> pd.DataFrame:
-    if "anthology_id" not in df.columns:
-        raise ValueError("Colonne anthology_id absente dans le corpus.")
-
-    links = load_resource_links(links_path)
-    base_cols = [c for c in df.columns if c not in RESOURCE_LINK_COLUMNS]
-    enriched = df[base_cols].merge(
-        links, on="anthology_id", how="left", validate="many_to_one"
-    )
-    if len(enriched) != len(df):
-        raise ValueError("Merge a duplique des lignes — verifier les anthology_id.")
-
-    if "pdf_url" in base_cols:
-        pos = base_cols.index("pdf_url") + 1
-        ordered = base_cols[:pos] + list(RESOURCE_LINK_COLUMNS) + base_cols[pos:]
-        return enriched[ordered]
-    return enriched
 
 
 def write_output(df: pd.DataFrame, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    log_diff_vs_existing(df, output_path)
     df.to_parquet(output_path, index=False)
-    n_domain = int(df["domain"].notna().sum()) if "domain" in df.columns else 0
-    n_thematic = (
-        int(df["thematic_domain"].notna().sum()) if "thematic_domain" in df.columns else 0
-    )
-    n_dataset = int(df["dataset_url"].notna().sum()) if "dataset_url" in df.columns else 0
-    n_code = int(df["code_url"].notna().sum()) if "code_url" in df.columns else 0
-    n_benchmark_lang = (
-        int(df["benchmark_languages"].notna().sum())
-        if "benchmark_languages" in df.columns
-        else 0
-    )
+
+    n_domain = int(df["domain"].notna().sum())
+    n_thematic = int(df["thematic_domain"].notna().sum())
+    n_dataset = int(df["dataset_url"].notna().sum())
+    n_code = int(df["code_url"].notna().sum())
+    n_benchmark_lang = int(df["benchmark_languages"].notna().sum())
     logger.info(
         "Ecrit %s (%d lignes, domain: %d, thematic_domain: %d, dataset_url: %d, "
         "code_url: %d, benchmark_languages: %d)",
@@ -278,97 +260,9 @@ def write_output(df: pd.DataFrame, output_path: Path) -> None:
     )
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--taxonomy", type=Path, default=DEFAULT_TAXONOMY)
-    parser.add_argument(
-        "--thematic-domains",
-        type=Path,
-        default=DEFAULT_THEMATIC_DOMAINS,
-        help="Parquet Mistral thematic_domain_assignment (batch results).",
-    )
-    parser.add_argument(
-        "--skip-thematic-domain",
-        action="store_true",
-        help="Ne pas fusionner thematic_domain dans le corpus.",
-    )
-    parser.add_argument(
-        "--resource-links",
-        type=Path,
-        default=DEFAULT_RESOURCE_LINKS,
-        help="Parquet link_arbiter (batch results) a fusionner dans le corpus.",
-    )
-    parser.add_argument(
-        "--skip-resource-links",
-        action="store_true",
-        help="Ne pas fusionner dataset_url / code_url dans le corpus.",
-    )
-    parser.add_argument(
-        "--language-extractions",
-        type=Path,
-        default=DEFAULT_LANGUAGE_EXTRACTIONS,
-        help="Parquet language_assignment (batch results) a fusionner dans le corpus.",
-    )
-    parser.add_argument(
-        "--skip-language-extractions",
-        action="store_true",
-        help="Ne pas fusionner benchmark_languages dans le corpus.",
-    )
-    parser.add_argument("--anthology", type=Path, default=DEFAULT_ANTHOLOGY)
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument(
-        "--rebuild",
-        action="store_true",
-        help="Reconstruire tout le corpus depuis taxonomie + anthology.",
-    )
-    parser.add_argument(
-        "--input",
-        type=Path,
-        default=None,
-        help="Parquet existant a enrichir (defaut: --output). Ignore si --rebuild.",
-    )
-    return parser.parse_args()
-
-
 def main() -> None:
-    args = parse_args()
-    if args.rebuild:
-        df = build_corpus(args.taxonomy, args.anthology)
-        if "thematic_domain" in df.columns:
-            df = df.drop(columns=["thematic_domain"])
-    else:
-        input_path = args.input or args.output
-        if not input_path.exists():
-            raise FileNotFoundError(
-                f"{input_path} introuvable. Utiliser --rebuild ou fournir --input."
-            )
-        df = add_domain_to_existing(input_path, args.taxonomy)
-
-    if not args.skip_thematic_domain:
-        if not args.thematic_domains.exists():
-            raise FileNotFoundError(
-                f"{args.thematic_domains} introuvable. "
-                "Lancer le batch thematic_domain_assignment ou passer --skip-thematic-domain."
-            )
-        df = merge_thematic_domain(df, args.thematic_domains)
-
-    if not args.skip_resource_links:
-        if not args.resource_links.exists():
-            raise FileNotFoundError(
-                f"{args.resource_links} introuvable. "
-                "Lancer le batch link_arbiter ou passer --skip-resource-links."
-            )
-        df = merge_resource_links(df, args.resource_links)
-
-    if not args.skip_language_extractions:
-        if not args.language_extractions.exists():
-            raise FileNotFoundError(
-                f"{args.language_extractions} introuvable. "
-                "Lancer le batch language_assignment ou passer --skip-language-extractions."
-            )
-        df = merge_language_extractions(df, args.language_extractions)
-
-    write_output(df, args.output)
+    df = build()
+    write_output(df, OUTPUT_PATH)
 
 
 if __name__ == "__main__":
