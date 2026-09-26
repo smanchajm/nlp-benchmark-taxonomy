@@ -118,7 +118,9 @@ def save_cache(df: pd.DataFrame, path: Path) -> None:
 def build_query_keys(df: pd.DataFrame) -> pd.DataFrame:
     """Ajoute ``s2_query_id`` (``DOI:`` prioritaire, sinon ``ACL:``) et sa source."""
     out = df.copy()
-    doi = out["doi"].where(out["doi"].notna() & out["doi"].astype(str).str.strip().ne(""))
+    doi = out["doi"].where(
+        out["doi"].notna() & out["doi"].astype(str).str.strip().ne("")
+    )
     aid = out["anthology_id"].where(
         out["anthology_id"].notna() & out["anthology_id"].astype(str).str.strip().ne("")
     )
@@ -185,7 +187,9 @@ def resolve_exact(
         cache = cache.drop_duplicates("s2_query_id", keep="last")
         save_cache(cache, cache_file)
     elif todo:
-        logger.info("--query-missing absent: les %d clés restent non résolues.", len(todo))
+        logger.info(
+            "--query-missing absent: les %d clés restent non résolues.", len(todo)
+        )
 
     out = df.merge(
         cache.rename(columns={"arxiv_id": "arxiv_exact"}), on="s2_query_id", how="left"
@@ -232,14 +236,21 @@ def resolve_search(
     """Complète par recherche titre+année. Les échecs sont cachés (cf. ``retry_misses``)."""
     cache = load_cache(cache_file, SEARCH_CACHE_COLUMNS)
     candidates = (
-        df.loc[df["title_norm"].notna() & df["year"].notna(), ["title", "title_norm", "year"]]
+        df.loc[
+            df["title_norm"].notna() & df["year"].notna(),
+            ["title", "title_norm", "year"],
+        ]
         .assign(year=lambda x: x["year"].astype(int))
         .drop_duplicates(["title_norm", "year"])
     )
 
     known = cache if retry_misses is False else cache[cache["arxiv_id"].notna()]
     seen = set(zip(known["title_norm"], known["year"], strict=False))
-    todo = [c for c in candidates.itertuples(index=False) if (c.title_norm, c.year) not in seen]
+    todo = [
+        c
+        for c in candidates.itertuples(index=False)
+        if (c.title_norm, c.year) not in seen
+    ]
     logger.info("Canal recherche: %d en cache, %d à requêter", len(cache), len(todo))
 
     if todo and query_missing:
@@ -259,9 +270,13 @@ def resolve_search(
         cache = cache.drop_duplicates(["title_norm", "year"], keep="last")
         save_cache(cache, cache_file)
     elif todo:
-        logger.info("--query-missing absent: les %d titres restent non cherchés.", len(todo))
+        logger.info(
+            "--query-missing absent: les %d titres restent non cherchés.", len(todo)
+        )
 
-    lookup = cache.dropna(subset=["arxiv_id"]).set_index(["title_norm", "year"])["arxiv_id"]
+    lookup = cache.dropna(subset=["arxiv_id"]).set_index(["title_norm", "year"])[
+        "arxiv_id"
+    ]
     lookup = lookup.to_dict()
     out = df.copy()
     out["arxiv_search"] = [
@@ -280,9 +295,15 @@ def union_channels(df: pd.DataFrame) -> pd.DataFrame:
     exact = out["arxiv_exact"]
     search = out["arxiv_search"]
 
-    disagree = int((exact.notna() & search.notna() & (exact.str.lower() != search.str.lower())).sum())
+    disagree = int(
+        (
+            exact.notna() & search.notna() & (exact.str.lower() != search.str.lower())
+        ).sum()
+    )
     if disagree:
-        logger.warning("%d papiers où les deux canaux donnent un arxiv_id différent.", disagree)
+        logger.warning(
+            "%d papiers où les deux canaux donnent un arxiv_id différent.", disagree
+        )
 
     out["arxiv_id"] = exact.fillna(search)
     out["arxiv_source"] = pd.NA
@@ -290,12 +311,14 @@ def union_channels(df: pd.DataFrame) -> pd.DataFrame:
     out.loc[exact.notna(), "arxiv_source"] = "s2_exact_key"
     out.loc[exact.notna() & search.notna(), "arxiv_source"] = "both"
 
-    n = len(out)
     logger.info(
         "Résolution: exact=%d (%.1f%%) | recherche=%d (%.1f%%) | union=%d (%.1f%%)",
-        int(exact.notna().sum()), 100 * exact.notna().mean(),
-        int(search.notna().sum()), 100 * search.notna().mean(),
-        int(out["arxiv_id"].notna().sum()), 100 * out["arxiv_id"].notna().mean(),
+        int(exact.notna().sum()),
+        100 * exact.notna().mean(),
+        int(search.notna().sum()),
+        100 * search.notna().mean(),
+        int(out["arxiv_id"].notna().sum()),
+        100 * out["arxiv_id"].notna().mean(),
     )
     return out.drop(columns=["arxiv_exact", "arxiv_search", "title_norm"])
 
@@ -338,7 +361,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Re-interroger aussi les titres déjà cherchés sans succès.",
     )
-    parser.add_argument("--api-key", default="", help="Clé S2 (sinon mode non authentifié).")
+    parser.add_argument(
+        "--api-key", default="", help="Clé S2 (sinon mode non authentifié)."
+    )
     return parser.parse_args()
 
 
