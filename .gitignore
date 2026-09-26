@@ -225,6 +225,3 @@ data - Copie/
 
 # Editor
 .vscode/
-
-# Built annotation guide (source of truth is annotation_guide.typ)
-annotation_guide*.pdf

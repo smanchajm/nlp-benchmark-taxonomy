@@ -42,7 +42,6 @@ narrows the full Anthology, then an LLM vote refines its positives.
                                    │
    ┌───────────────────────────────┴──────────── evaluation ────────────────┐
    │  src/evaluation/ — Label Studio configs, task export, gold sampling    │
-   │  annotation_guide.typ — annotator guide (French)                       │
    │  notebooks/8 — accuracy / F1 against the gold set                      │
    └────────────────────────────────────────────────────────────────────────┘
 ```
