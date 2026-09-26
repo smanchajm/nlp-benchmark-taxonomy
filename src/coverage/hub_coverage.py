@@ -5,7 +5,7 @@ archive figée (join local, arxiv puis titre). HF = API datée, cascade
 ``direct -> arxiv -> name`` (``name`` = tier bruité, hors borne ``in_hf``).
 Code de recherche : peu de garde-fous, on privilégie la lisibilité.
 
-La résolution ``bibkey -> arxiv_id`` vit dans ``s2_arxiv_resolution``.
+La résolution ``bibkey -> arxiv_id`` vit dans ``arxiv_resolution``.
 """
 
 from __future__ import annotations
@@ -27,18 +27,11 @@ DATA_DIR = ROOT / "data"
 PWC_DIR = DATA_DIR / "pwc_coverage"
 OUT_DIR = DATA_DIR / "hub_coverage"
 
-ENRICHED_LINKS_FILE = (
-    DATA_DIR / "corpus" / "single_task_benchmark_paper_enriched_links.parquet"
-)
 RESOURCE_LINKS_FILE = DATA_DIR / "extraction" / "resource_links.parquet"
 PWC_PAPERS_FILE = PWC_DIR / "pwc_papers.parquet"
 PWC_DATASETS_FILE = PWC_DIR / "pwc_datasets.parquet"
 HF_CACHE_FILE = OUT_DIR / "hf_resolution.parquet"
 COVERAGE_OUT_FILE = OUT_DIR / "benchmark_hub_coverage.parquet"
-
-# sources de `s2_arxiv_resolution`
-MERGED_FILE = DATA_DIR / "taxonomy" / "merged.parquet"
-ANTHOLOGY_ENRICHED_FILE = DATA_DIR / "raw" / "anthology_enriched.parquet"
 
 PWC_ARCHIVE_DATE = "2025-07-28"
 HF_COLS = [
