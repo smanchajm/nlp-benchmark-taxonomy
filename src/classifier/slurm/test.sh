@@ -6,8 +6,8 @@
 #SBATCH --time=10
 #SBATCH --output=logs/slurm/%j.out
 
-CHECKPOINT="${1:?Usage: sbatch scripts/test.sh <checkpoint_path> <config>}"
-CONFIG="${2:?Usage: sbatch scripts/test.sh <checkpoint_path> <config>}"
+CHECKPOINT="${1:?Usage: sbatch src/classifier/slurm/test.sh <checkpoint_path> <config>}"
+CONFIG="${2:?Usage: sbatch src/classifier/slurm/test.sh <checkpoint_path> <config>}"
 
 PROJECT_DIR="$HOME/nlp-benchmark-taxonomy"
 SCRATCH_DIR="/Tmp/$(whoami)/${SLURM_JOB_ID}"
@@ -17,7 +17,7 @@ trap cleanup EXIT
 
 # Copy project + only the needed checkpoint
 mkdir -p "$SCRATCH_DIR/data/classifier/ready"
-cp -r "$PROJECT_DIR"/{src,config,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
+cp -r "$PROJECT_DIR"/{src,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
 cp -r "$PROJECT_DIR/data/classifier/ready/"* "$SCRATCH_DIR/data/classifier/ready/"
 mkdir -p "$SCRATCH_DIR/$CHECKPOINT"
 if [ -d "$SCRATCH_DIR/$CHECKPOINT" ] && [ -f "$SCRATCH_DIR/$CHECKPOINT/model.safetensors" ]; then

@@ -1,13 +1,12 @@
 #!/bin/bash -l
-#SBATCH --job-name=sweep
+#SBATCH --job-name=train-0
 #SBATCH --partition=rali
 #SBATCH --gres=gpu:rtx_a5000:1
 #SBATCH --cpus-per-task=4
-#SBATCH --time=120
+#SBATCH --time=60
 #SBATCH --output=logs/slurm/%j.out
 
-SWEEP_ID="${1:?Usage: sbatch scripts/sweep.sh <sweep_id>}"
-
+# Out dir
 PROJECT_DIR="$HOME/nlp-benchmark-taxonomy"
 SCRATCH_DIR="/Tmp/$(whoami)/${SLURM_JOB_ID}"
 
@@ -17,12 +16,12 @@ trap cleanup EXIT
 # Copy local project
 mkdir -p "$SCRATCH_DIR/data/classifier/ready"
 mkdir -p "$SCRATCH_DIR/data/classifier/checkpoints"
-cp -r "$PROJECT_DIR"/{src,config,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
+cp -r "$PROJECT_DIR"/{src,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
 cp -r "$PROJECT_DIR/data/classifier/ready/"* "$SCRATCH_DIR/data/classifier/ready/"
 
 cd "$SCRATCH_DIR"
 
-# Setup env
+# Setup env (persistent venv, only reinstall if requirements change)
 VENV_DIR="$PROJECT_DIR/.venv"
 module load python/3.11 2>/dev/null || true
 REQ_HASH=$(md5sum "$SCRATCH_DIR/requirements-train.txt" | cut -d' ' -f1)
@@ -37,10 +36,12 @@ else
     source "$VENV_DIR/bin/activate"
 fi
 
+# Train
 export PYTHONPATH="$SCRATCH_DIR/src:$PYTHONPATH"
+python -m src.classifier.train "$@"
 
-# Run sweep agent — picks up runs until sweep is done or job times out
-wandb agent "$SWEEP_ID"
+# Save results
+mkdir -p "$PROJECT_DIR/data/classifier/checkpoints"
+cp -r "$SCRATCH_DIR/data/classifier/checkpoints/"* "$PROJECT_DIR/data/classifier/checkpoints/"
 
-# Copy trained models back to persistent storage
-cp -r "$SCRATCH_DIR/data/classifier/checkpoints/"* "$PROJECT_DIR/data/classifier/checkpoints/" 2>/dev/null || true
+echo "Done. Results copied to $PROJECT_DIR/data/classifier/checkpoints/"

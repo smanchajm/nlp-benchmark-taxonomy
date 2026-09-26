@@ -14,7 +14,9 @@ from src.classifier.model import TransformerClassifier
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CONFIG = Path("config/base.yaml")
+# Relatif au module, pas au cwd : les jobs SLURM tournent depuis /Tmp.
+CONFIGS_DIR = Path(__file__).resolve().parent / "configs"
+DEFAULT_CONFIG = CONFIGS_DIR / "base.yaml"
 SPLITS_DIR = Path("data/classifier/ready")
 
 
@@ -24,7 +26,7 @@ def parse_args() -> argparse.Namespace:
         "--config",
         type=Path,
         default=DEFAULT_CONFIG,
-        help="Path to YAML config file (default: config/base.yaml)",
+        help="Path to YAML config file (default: src/classifier/configs/base.yaml)",
     )
     parser.add_argument(
         "--sweep",

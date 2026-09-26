@@ -24,8 +24,9 @@ logger = logging.getLogger(__name__)
 # --- chemins ---
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "data"
-PWC_DIR = DATA_DIR / "pwc_coverage"
-OUT_DIR = DATA_DIR / "hub_coverage"
+COVERAGE_DIR = DATA_DIR / "coverage"
+PWC_DIR = COVERAGE_DIR / "pwc"
+OUT_DIR = COVERAGE_DIR / "hub"
 
 RESOURCE_LINKS_FILE = DATA_DIR / "extraction" / "resource_links.parquet"
 PWC_PAPERS_FILE = PWC_DIR / "pwc_papers.parquet"

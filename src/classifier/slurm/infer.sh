@@ -6,9 +6,9 @@
 #SBATCH --time=30
 #SBATCH --output=logs/slurm/%j.out
 
-INPUT="${1:?Usage: sbatch scripts/infer.sh <input_parquet> <checkpoint_path> <config>}"
-CHECKPOINT="${2:?Usage: sbatch scripts/infer.sh <input_parquet> <checkpoint_path> <config>}"
-CONFIG="${3:?Usage: sbatch scripts/infer.sh <input_parquet> <checkpoint_path> <config>}"
+INPUT="${1:?Usage: sbatch src/classifier/slurm/infer.sh <input_parquet> <checkpoint_path> <config>}"
+CHECKPOINT="${2:?Usage: sbatch src/classifier/slurm/infer.sh <input_parquet> <checkpoint_path> <config>}"
+CONFIG="${3:?Usage: sbatch src/classifier/slurm/infer.sh <input_parquet> <checkpoint_path> <config>}"
 
 PROJECT_DIR="$HOME/nlp-benchmark-taxonomy"
 SCRATCH_DIR="/Tmp/$(whoami)/${SLURM_JOB_ID}"
@@ -18,7 +18,7 @@ trap cleanup EXIT
 
 # Copy project + checkpoint + input data
 mkdir -p "$SCRATCH_DIR/$(dirname "$INPUT")"
-cp -r "$PROJECT_DIR"/{src,config,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
+cp -r "$PROJECT_DIR"/{src,requirements-train.txt,pyproject.toml,uv.lock} "$SCRATCH_DIR/"
 cp "$PROJECT_DIR/$INPUT" "$SCRATCH_DIR/$INPUT"
 mkdir -p "$SCRATCH_DIR/$CHECKPOINT"
 if [ -f "$SCRATCH_DIR/$CHECKPOINT/model.safetensors" ]; then
