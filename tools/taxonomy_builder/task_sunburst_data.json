@@ -1,0 +1,404 @@
+{
+  "id": "root",
+  "label": "Tasks",
+  "value": 0,
+  "paper_count": 1238,
+  "children": [
+    {
+      "id": "mother::NLI",
+      "label": "NLI",
+      "value": 0,
+      "paper_count": 115,
+      "children": [
+        {
+          "id": "task::NLI::Classical NLI",
+          "label": "Classical NLI",
+          "value": 94,
+          "paper_count": 94,
+          "children": []
+        },
+        {
+          "id": "task::NLI::Pragmatic Inference",
+          "label": "Pragmatic Inference",
+          "value": 16,
+          "paper_count": 16,
+          "children": []
+        },
+        {
+          "id": "task::NLI::Domain-Specific NLI",
+          "label": "Domain-Specific NLI",
+          "value": 5,
+          "paper_count": 5,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Stance",
+      "label": "Stance",
+      "value": 0,
+      "paper_count": 102,
+      "children": [
+        {
+          "id": "task::Stance::Generic Stance",
+          "label": "Generic Stance",
+          "value": 75,
+          "paper_count": 75,
+          "children": []
+        },
+        {
+          "id": "task::Stance::Ideological Stance",
+          "label": "Ideological Stance",
+          "value": 20,
+          "paper_count": 20,
+          "children": []
+        },
+        {
+          "id": "task::Stance::Domain-Specific Stance",
+          "label": "Domain-Specific Stance",
+          "value": 7,
+          "paper_count": 7,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Abusive Language",
+      "label": "Abusive Language",
+      "value": 0,
+      "paper_count": 99,
+      "children": [
+        {
+          "id": "task::Abusive Language::Harm Intent",
+          "label": "Harm Intent",
+          "value": 46,
+          "paper_count": 46,
+          "children": []
+        },
+        {
+          "id": "task::Abusive Language::Norm-Based Harm Assessment",
+          "label": "Norm-Based Harm Assessment",
+          "value": 34,
+          "paper_count": 34,
+          "children": []
+        },
+        {
+          "id": "task::Abusive Language::Contextual Conversational Harm",
+          "label": "Contextual Conversational Harm",
+          "value": 19,
+          "paper_count": 19,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Fact & Claim",
+      "label": "Fact & Claim",
+      "value": 0,
+      "paper_count": 83,
+      "children": [
+        {
+          "id": "task::Fact & Claim::Evidence-based Verification",
+          "label": "Evidence-based Verification",
+          "value": 81,
+          "paper_count": 81,
+          "children": []
+        },
+        {
+          "id": "task::Fact & Claim::Health Misinformation",
+          "label": "Health Misinformation",
+          "value": 2,
+          "paper_count": 2,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Topic / Subject",
+      "label": "Topic / Subject",
+      "value": 0,
+      "paper_count": 64,
+      "children": [
+        {
+          "id": "task::Topic / Subject::Generic Topic",
+          "label": "Generic Topic",
+          "value": 55,
+          "paper_count": 55,
+          "children": []
+        },
+        {
+          "id": "task::Topic / Subject::Event Type",
+          "label": "Event Type",
+          "value": 9,
+          "paper_count": 9,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Rule Compliance",
+      "label": "Rule Compliance",
+      "value": 60,
+      "paper_count": 60,
+      "children": []
+    },
+    {
+      "id": "mother::Sentiment & Opinion",
+      "label": "Sentiment & Opinion",
+      "value": 0,
+      "paper_count": 60,
+      "children": [
+        {
+          "id": "task::Sentiment & Opinion::Generic Sentiment",
+          "label": "Generic Sentiment",
+          "value": 37,
+          "paper_count": 37,
+          "children": []
+        },
+        {
+          "id": "task::Sentiment & Opinion::Aspect-Based Sentiment",
+          "label": "Aspect-Based Sentiment",
+          "value": 23,
+          "paper_count": 23,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Non-literal",
+      "label": "Non-literal",
+      "value": 0,
+      "paper_count": 58,
+      "children": [
+        {
+          "id": "task::Non-literal::Figurative Language",
+          "label": "Figurative Language",
+          "value": 43,
+          "paper_count": 43,
+          "children": []
+        },
+        {
+          "id": "task::Non-literal::Humor",
+          "label": "Humor",
+          "value": 10,
+          "paper_count": 10,
+          "children": []
+        },
+        {
+          "id": "task::Non-literal::Satire & Parody",
+          "label": "Satire & Parody",
+          "value": 5,
+          "paper_count": 5,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Author Profiling",
+      "label": "Author Profiling",
+      "value": 0,
+      "paper_count": 54,
+      "children": [
+        {
+          "id": "task::Author Profiling::Regional Variant",
+          "label": "Regional Variant",
+          "value": 30,
+          "paper_count": 30,
+          "children": []
+        },
+        {
+          "id": "task::Author Profiling::Demographic Inference",
+          "label": "Demographic Inference",
+          "value": 12,
+          "paper_count": 12,
+          "children": []
+        },
+        {
+          "id": "task::Author Profiling::Personality",
+          "label": "Personality",
+          "value": 8,
+          "paper_count": 8,
+          "children": []
+        },
+        {
+          "id": "task::Author Profiling::Native Language Identification",
+          "label": "Native Language Identification",
+          "value": 4,
+          "paper_count": 4,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Mental Health / Wellbeing",
+      "label": "Mental Health / Wellbeing",
+      "value": 0,
+      "paper_count": 52,
+      "children": [
+        {
+          "id": "task::Mental Health / Wellbeing::Generic Psychological State",
+          "label": "Generic Psychological State",
+          "value": 32,
+          "paper_count": 32,
+          "children": []
+        },
+        {
+          "id": "task::Mental Health / Wellbeing::Counseling",
+          "label": "Counseling",
+          "value": 10,
+          "paper_count": 10,
+          "children": []
+        },
+        {
+          "id": "task::Mental Health / Wellbeing::Substance Use",
+          "label": "Substance Use",
+          "value": 5,
+          "paper_count": 5,
+          "children": []
+        },
+        {
+          "id": "task::Mental Health / Wellbeing::Suicide",
+          "label": "Suicide",
+          "value": 5,
+          "paper_count": 5,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Logical Reasoning",
+      "label": "Logical Reasoning",
+      "value": 48,
+      "paper_count": 48,
+      "children": []
+    },
+    {
+      "id": "mother::Text Quality",
+      "label": "Text Quality",
+      "value": 0,
+      "paper_count": 47,
+      "children": [
+        {
+          "id": "task::Text Quality::Writing Quality & Proficiency",
+          "label": "Writing Quality & Proficiency",
+          "value": 21,
+          "paper_count": 21,
+          "children": []
+        },
+        {
+          "id": "task::Text Quality::Linguistic Acceptability",
+          "label": "Linguistic Acceptability",
+          "value": 20,
+          "paper_count": 20,
+          "children": []
+        },
+        {
+          "id": "task::Text Quality::Register & Formality",
+          "label": "Register & Formality",
+          "value": 6,
+          "paper_count": 6,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Dialogue Act",
+      "label": "Dialogue Act",
+      "value": 46,
+      "paper_count": 46,
+      "children": []
+    },
+    {
+      "id": "mother::Social Norm",
+      "label": "Social Norm",
+      "value": 43,
+      "paper_count": 43,
+      "children": []
+    },
+    {
+      "id": "mother::Deception",
+      "label": "Deception",
+      "value": 40,
+      "paper_count": 40,
+      "children": []
+    },
+    {
+      "id": "mother::Emotion",
+      "label": "Emotion",
+      "value": 0,
+      "paper_count": 40,
+      "children": [
+        {
+          "id": "task::Emotion::Emotion Recognition",
+          "label": "Emotion Recognition",
+          "value": 40,
+          "paper_count": 40,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "mother::Commonsense Plausibility",
+      "label": "Commonsense Plausibility",
+      "value": 39,
+      "paper_count": 39,
+      "children": []
+    },
+    {
+      "id": "mother::Stereotype & Social Bias",
+      "label": "Stereotype & Social Bias",
+      "value": 39,
+      "paper_count": 39,
+      "children": []
+    },
+    {
+      "id": "mother::Intent",
+      "label": "Intent",
+      "value": 36,
+      "paper_count": 36,
+      "children": []
+    },
+    {
+      "id": "mother::Word Sense Disambiguation (WSD)",
+      "label": "Word Sense Disambiguation (WSD)",
+      "value": 32,
+      "paper_count": 32,
+      "children": []
+    },
+    {
+      "id": "mother::Machine-Generated Text",
+      "label": "Machine-Generated Text",
+      "value": 24,
+      "paper_count": 24,
+      "children": []
+    },
+    {
+      "id": "mother::Event Factuality",
+      "label": "Event Factuality",
+      "value": 23,
+      "paper_count": 23,
+      "children": []
+    },
+    {
+      "id": "mother::Paraphrase",
+      "label": "Paraphrase",
+      "value": 17,
+      "paper_count": 17,
+      "children": []
+    },
+    {
+      "id": "mother::Language Identification",
+      "label": "Language Identification",
+      "value": 10,
+      "paper_count": 10,
+      "children": []
+    },
+    {
+      "id": "mother::Crisis & Urgency",
+      "label": "Crisis & Urgency",
+      "value": 7,
+      "paper_count": 7,
+      "children": []
+    }
+  ]
+}
