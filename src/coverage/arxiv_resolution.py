@@ -29,13 +29,16 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 from pathlib import Path
 
 import pandas as pd
 import requests
+from dotenv import load_dotenv
 
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # ``norm_title`` vient de ``hub_coverage`` : une seule définition des clés de
 # matching, car elle sert aussi au join PwC par titre.
@@ -61,6 +64,15 @@ SEARCH_CACHE_COLUMNS = ("title_norm", "year", "arxiv_id")
 MIN_REQUEST_INTERVAL = 1.1
 BATCH_SIZE = 500
 MAX_RETRIES = 6
+
+
+class SearchUnavailable(RuntimeError):
+    """Le canal recherche n'a pas pu être interrogé (rate limit, réseau).
+
+    Distinct d'une absence de résultat : un échec de transport ne doit jamais
+    être caché comme un « non trouvé », sinon le papier ne sera plus jamais
+    retenté et la couverture est sous-estimée définitivement.
+    """
 
 
 # --- HTTP --------------------------------------------------------------------
@@ -210,7 +222,9 @@ def query_search(title: str, year: int, api_key: str = "") -> str | None:
         params={"query": title, "limit": 10, "fields": "externalIds,title,year"},
     )
     if resp is None:
-        return None
+        # Échec de transport (429 épuisé, timeout) : PAS une absence. Remonté
+        # comme tel pour ne pas cacher un faux négatif.
+        raise SearchUnavailable(f"S2 search indisponible pour {title[:60]!r}")
 
     target = norm_title(title)
     for record in (resp.json() or {}).get("data") or []:
@@ -254,21 +268,36 @@ def resolve_search(
     logger.info("Canal recherche: %d en cache, %d à requêter", len(cache), len(todo))
 
     if todo and query_missing:
-        rows = []
+        rows, indisponibles = [], 0
         for i, cand in enumerate(todo, start=1):
-            rows.append(
-                {
-                    "title_norm": cand.title_norm,
-                    "year": cand.year,
-                    "arxiv_id": query_search(cand.title, cand.year, api_key),
-                }
-            )
+            try:
+                arxiv_id = query_search(cand.title, cand.year, api_key)
+            except SearchUnavailable as err:
+                # Non caché : on retentera à la prochaine exécution.
+                indisponibles += 1
+                logger.warning("%s", err)
+            else:
+                rows.append(
+                    {
+                        "title_norm": cand.title_norm,
+                        "year": cand.year,
+                        "arxiv_id": arxiv_id,
+                    }
+                )
             if i % 50 == 0:
                 logger.info("Recherche S2: %d/%d titres", i, len(todo))
             time.sleep(MIN_REQUEST_INTERVAL)
-        cache = pd.concat([cache, pd.DataFrame(rows)], ignore_index=True)
-        cache = cache.drop_duplicates(["title_norm", "year"], keep="last")
-        save_cache(cache, cache_file)
+        if rows:
+            cache = pd.concat([cache, pd.DataFrame(rows)], ignore_index=True)
+            cache = cache.drop_duplicates(["title_norm", "year"], keep="last")
+            save_cache(cache, cache_file)
+        if indisponibles:
+            logger.warning(
+                "%d/%d titres non requêtables (rate limit) — non cachés, "
+                "relancer pour les compléter.",
+                indisponibles,
+                len(todo),
+            )
     elif todo:
         logger.info(
             "--query-missing absent: les %d titres restent non cherchés.", len(todo)
@@ -362,16 +391,24 @@ def parse_args() -> argparse.Namespace:
         help="Re-interroger aussi les titres déjà cherchés sans succès.",
     )
     parser.add_argument(
-        "--api-key", default="", help="Clé S2 (sinon mode non authentifié)."
+        "--api-key",
+        default=None,
+        help="Clé S2. Par défaut : S2_API_KEY du .env, sinon mode non authentifié "
+        "(fortement rate-limité sur la recherche).",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+
+    load_dotenv(ROOT / ".env")
+    api_key = args.api_key if args.api_key is not None else os.getenv("S2_API_KEY", "")
+    logger.info("Clé S2 %s.", "chargée" if api_key.strip() else "absente")
+
     df = run_resolution(
         args.input,
-        api_key=args.api_key,
+        api_key=api_key.strip(),
         query_missing=args.query_missing,
         retry_misses=args.retry_misses,
     )
