@@ -1,0 +1,110 @@
+<View>
+
+  <Style>
+    .paper-col{overflow-y:auto;padding:16px;border-right:2px solid #e8e8e8}
+    .annot-col{overflow-y:auto;padding:16px;background:#fafafa}
+  </Style>
+
+  <View style="display:flex;height:calc(100vh - 120px);">
+
+    <!-- LEFT: paper content -->
+    <View className="paper-col" style="flex:1;min-width:0;">
+      <Header value="$bibkey"/>
+      <HyperText name="pdf_link" value="&lt;a href=&quot;$pdf_url&quot; target=&quot;_blank&quot;&gt;Open PDF&lt;/a&gt;"/>
+      <Header value="Title"/>
+      <Text name="title" value="$title"/>
+      <Header value="Abstract"/>
+      <Text name="abstract" value="$abstract"/>
+      <Header value="Task description (auto-extracted)"/>
+      <Text name="paraphrase_task" value="$paraphrase_task"/>
+    </View>
+
+    <!-- RIGHT: annotation controls -->
+    <View className="annot-col" style="width:420px;flex-shrink:0;">
+
+      <Header value="Task category"/>
+      <Taxonomy name="task" toName="abstract"
+                placeholder="Type to filter or expand categories..."
+                leafOnly="true" filter="true" maxUsages="1">
+          <Choice value="Sentiment &amp; Opinion" hint="Classifie l’orientation d’un texte (positive, négative, neutre), y compris l’opinion envers une cible.">
+            <Choice value="Aspect-Based Sentiment" hint="Identifie la polarité exprimée envers des aspects spécifiques d’une entité (produit, service, expérience), plutôt qu’envers l’entité globale."/>
+            <Choice value="Generic Sentiment" hint="Classifie la polarité globale d&apos;un texte sans cible explicite. 
+Si une cible explicite est présente alors c&apos;est du Stance."/>
+          </Choice>
+          <Choice value="Emotion" hint="Catégorise l&apos;état affectif exprimé dans un texte selon un inventaire discret d&apos;émotions, indépendamment de la polarité (vs Sentiment) et sans dimension clinique ou de sévérité (vs Generic Psychological State).">
+            <Choice value="Emotion Recognition" hint="Catégorise l&apos;état affectif exprimé dans un texte selon un inventaire discret d&apos;émotions, indépendamment de la polarité (vs Sentiment) et sans dimension clinique ou de sévérité (vs Generic Psychological State)."/>
+          </Choice>
+          <Choice value="Topic / Subject" hint="Attribue un texte à un sujet thématique ou domaine de contenu parmi un inventaire prédéfini. Le jugement porte sur le sujet du texte, non sur un événement mentionné (vs Event Type) ni sur une orientation évaluative (vs Sentiment/Stance).">
+            <Choice value="Generic Topic" hint="Assigne un texte à une catégorie thématique parmi un inventaire prédéfini de sujets ou domaines."/>
+            <Choice value="Event Type" hint="Classifie des mentions d&apos;événements"/>
+          </Choice>
+          <Choice value="Intent" hint="Détermine l’objectif de l’utilisateur (demande, réservation, information, etc.)"/>
+          <Choice value="Dialogue Act" hint="Catégorise la fonction d’un dialogue (question, réponse, accord, etc.)"/>
+          <Choice value="NLI" hint="Évalue la relation logique explicite entre deux textes donnés (entailment, contradiction, neutral). Requiert une paire premisse/hypothèse, ce qui le distingue de Commonsense Plausibility (plausibilité d&apos;un seul énoncé selon le sens commun) et de Logical Reasoning (validité formelle d&apos;une chaîne inférentielle).">
+            <Choice value="Domain-Specific NLI" hint="Benchmarks de NLI conçut spécifiquement pour un domaine d&apos;aplication spécifique"/>
+            <Choice value="Classical NLI" hint="Relation logique explicite entre deux textes ou propositions."/>
+            <Choice value="Pragmatic Inference" hint="Évalue une implication implicite dérivée du contexte pragmatique (sous-entendu, présupposition), non une relation logique explicite entre deux propositions (vs Classical NLI)."/>
+          </Choice>
+          <Choice value="Paraphrase" hint="Détermine si deux expressions partagent un sens équivalent malgré des formulations différentes."/>
+          <Choice value="Fact &amp; Claim" hint="Vérifie si une affirmation est supportée, réfutée ou indéterminée en la confrontant à une preuve externe (texte source, évidence, connaissance de référence). La présence d&apos;une preuve à confronter distingue ce nœud de Deception (signaux internes seuls) et de Machine-Generated Text (origine, pas véracité).">
+            <Choice value="Evidence-based Verification" hint="Évalue si une preuve textuelle soutient, contredit ou ne permet pas de vérifier une affirmation."/>
+            <Choice value="Health Misinformation" hint="Évalue la validité d&apos;affirmations sur santé, symptômes ou relations causales physiologiques"/>
+          </Choice>
+          <Choice value="Stance" hint="Détecte la position d’un texte pour/contre/neutre vis-à-vis d’une cible">
+            <Choice value="Domain-Specific Stance" hint="Analyse la position exprimée dans un domaine nécessitant des connaissances contextuelles spécifiques."/>
+            <Choice value="Generic Stance" hint="Identifie la position favorable, défavorable ou neutre envers une cible donnée."/>
+            <Choice value="Ideological Stance" hint="Analyse des positions liées à des croyances politiques, sociales ou idéologiques."/>
+          </Choice>
+          <Choice value="Abusive Language" hint="Identifie le caractère nuisible d&apos;un texte (hostilité, agression, attaque, offense), explicite ou implicite, ciblé ou non. Le jugement porte sur une hostilité ou une intention de nuire, ce qui le distingue de Stereotype &amp; Social Bias (association généralisée attribuée à un groupe, pas nécessairement hostile) et de Social Norm (inadéquation sociale sans préjudice ciblé).">
+            <Choice value="Contextual Conversational Harm" hint="Évalue le caractère nocif d&apos;un énoncé conversationnel selon le contexte du dialogue"/>
+            <Choice value="Harm Intent" hint="Détermine si un texte contient du langage nuisible, hostile ou irrespectueux envers une cible (individu ou groupe) — insulte, agression, offense, dénigrement — qu&apos;il soit explicite ou implicite, universel ou ancré dans des normes sociales/culturelles spécifiques. Couvre hate speech, offensive language, toxicity et violations de normes de respect. Se distingue de Stereotype &amp; Social Bias (association généralisée non nécessairement hostile) et de Contextual Conversational Harm (nocivité décidable seulement via le contexte du dialogue)."/>
+          </Choice>
+          <Choice value="Mental Health / Wellbeing" hint="Identifie des états psychologiques/cliniques (type, présence, sévérité) et des indices conversationnels liés à l’accompagnement thérapeutique en contexte de santé mentale.">
+            <Choice value="Counseling" hint="Identifie des comportements, techniques et actes thérapeutiques dans les échanges conseiller–patient (empathie, reformulation, guidance, alliance)."/>
+            <Choice value="Suicide" hint="Évalue la présence et la sévérité d&apos;intentions suicidaires ou d&apos;auto-agression dans un texte"/>
+            <Choice value="Substance Use" hint="Identifie états ou comportements liés à la consommation de substances à partir d&apos;indices linguistiques"/>
+            <Choice value="Generic Psychological State" hint="Identifie la présence, le type ou l&apos;intensité d&apos;un état psychologique ou clinique (dépression, anxiété, détresse), avec une dimension de condition ou de sévérité qui le distingue d&apos;une émotion transitoire (vs Emotion)."/>
+          </Choice>
+          <Choice value="Machine-Generated Text" hint="Détermine si un texte a été produit par un humain ou par un système automatique, à partir de patrons linguistiques et stylistiques intrinsèques. Le jugement porte sur l&apos;origine du texte, pas sur la véracité de son contenu (vs Fact &amp; Claim) ni sur une intention trompeuse (vs Deception)."/>
+          <Choice value="Event Factuality" hint="Ce nœud regroupe les tâches visant à qualifier le statut épistémique d&apos;une assertion (degré de certitude, modalité, factualité perçue) plutôt que son contenu sémantique ou l&apos;alignement idéologique de l&apos;auteur."/>
+          <Choice value="Non-literal" hint="Distingue l&apos;usage littéral vs figuratif d&apos;une expression dans son contexte (métaphore, idiome, ironie, sarcasme, hyperbole, simile), à partir de cues sémantiques, contextuels et conventionnels.">
+            <Choice value="Humor" hint="Détermine si un texte est conçu pour susciter l&apos;amusement, à partir d&apos;indices linguistiques et structurels d&apos;intention comique."/>
+            <Choice value="Satire &amp; Parody" hint="Détecte si un texte utilise des procédés satiriques ou parodiques (ironie, exagération, mimétisme critique) pour produire un effet comique-critique."/>
+            <Choice value="Figurative Language" hint="usage non-littéral incluant métaphore, idiome, hyperbole, ironie et sarcasme."/>
+          </Choice>
+          <Choice value="Text Quality" hint="Évalue la qualité linguistique ou rédactionnelle d&apos;un texte selon des critères normatifs (grammaire, cohérence, vocabulaire, niveau de compétence).">
+            <Choice value="Linguistic Acceptability" hint="Détermine si une phrase est grammaticalement bien-formée selon les normes syntaxiques d&apos;une langue"/>
+            <Choice value="Writing Quality &amp; Proficiency" hint="Attribue une note à une production écrite selon des critères de qualité globale (vocabulaire, cohérence, argumentation, niveau CEFR)"/>
+            <Choice value="Register &amp; Formality" hint="Évalue le degré de conformité d&apos;un texte à un registre ou niveau de formalité"/>
+          </Choice>
+          <Choice value="Word Sense Disambiguation (WSD)" hint="Identifie le sens lexical d&apos;un mot ou la nature sémantique d&apos;une expression dans son contexte, ancré sur un inventaire lexical-sémantique prédéfini"/>
+          <Choice value="Author Profiling" hint="Infère des attributs de l’auteur à partir de son texte (origine linguistique, variété, langue maternelle, démographie, traits psychologiques/personnalité).">
+            <Choice value="Native Language Identification" hint="Identifie la langue maternelle d&apos;un auteur"/>
+            <Choice value="Regional Variant" hint="Identifie la variété régionale, géographique ou communautaire d&apos;une langue à partir de marqueurs"/>
+            <Choice value="Demographic Inference" hint="Infère des attributs démographiques ou sociaux d&apos;un auteur"/>
+            <Choice value="Personality" hint="Infère des traits psychologiques stables ou dispositions de personnalité"/>
+          </Choice>
+          <Choice value="Rule Compliance" hint="Évalue si un texte satisfait des règles ou critères prédéfinis (légaux, réglementaires, éligibilité) pour produire un jugement de conformité."/>
+          <Choice value="Deception" hint="Juge la véracité ou l&apos;intention trompeuse d&apos;un texte à partir de signaux stylistiques et structurels internes, sans confrontation à une preuve externe (vs Fact &amp; Claim, qui requiert une évidence)."/>
+          <Choice value="Stereotype &amp; Social Bias" hint="Identifie l&apos;expression d&apos;un stéréotype, biais ou association généralisée attribuée à un groupe social, explicite ou subtile. Le jugement porte sur la généralisation attribuée à un groupe, non sur une hostilité (vs Abusive Language, qui requiert une intention de nuire)."/>
+          <Choice value="Commonsense Plausibility" hint="Juge la plausibilité d&apos;un événement, d&apos;une continuation narrative ou d&apos;une explication selon le sens commun et la connaissance du monde, sans paire logique explicite (vs NLI) ni chaîne formelle (vs Logical Reasoning)."/>
+          <Choice value="Crisis &amp; Urgency" hint="Détermine si un texte court signale une situation critique ou requiert une action immédiate dans un contexte d&apos;urgence"/>
+          <Choice value="Logical Reasoning" hint="Évalue la validité formelle d&apos;un raisonnement ou d&apos;une chaîne inférentielle, indépendamment du contenu de sens commun (vs Commonsense Plausibility) et sans se réduire à une relation premisse/hypothèse (vs NLI)."/>
+          <Choice value="Social Norm" hint="Évalue l’adéquation d’un énoncé aux conventions sociales (politesse, étiquette, convenance culturelle) sans intention de nuire ni contenu abusif ciblé."/>
+          <Choice value="Language Identification" hint="Identifie la langue d&apos;un texte parmi un inventaire de langues, à partir de patrons orthographiques et lexicaux."/>
+          <Choice value="other" hint="No taxonomy category fits"/>
+        </Taxonomy>
+
+        <!-- Skip option: check this instead of filling the taxonomy -->
+        <Choices name="skip" toName="abstract" choice="single" layout="vertical">
+          <Choice value="not_classif_bench"
+                  hint="Not a classification benchmark — taxonomy not applicable"/>
+        </Choices>
+
+      <Header value="Notes (optional)"/>
+      <TextArea name="notes" toName="abstract" rows="4"
+                placeholder="Edge case justification, ambiguities..."/>
+    </View>
+  </View>
+
+</View>

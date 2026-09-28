@@ -1,0 +1,342 @@
+{
+  "id": "root",
+  "label": "taxonomy_root",
+  "description": "Racine de la taxonomie.",
+  "children": [
+    {
+      "id": "node_0001",
+      "label": "Sentiment & Opinion",
+      "description": "Classifie l’orientation d’un texte (positive, négative, neutre), y compris l’opinion envers une cible.",
+      "children": [
+        {
+          "id": "node_0026",
+          "label": "Aspect-Based Sentiment",
+          "description": "Identifie la polarité exprimée envers des aspects spécifiques d’une entité (produit, service, expérience), plutôt qu’envers l’entité globale.",
+          "children": []
+        },
+        {
+          "id": "node_0039",
+          "label": "Generic Sentiment",
+          "description": "Classifie la polarité globale d'un texte sans cible explicite. \nSi une cible explicite est présente alors c'est du Stance.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0002",
+      "label": "Emotion",
+      "description": "Catégorise l'état affectif exprimé dans un texte selon un inventaire discret d'émotions, indépendamment de la polarité (vs Sentiment) et sans dimension clinique ou de sévérité (vs Generic Psychological State).",
+      "children": [
+        {
+          "id": "node_0027",
+          "label": "Emotion Recognition",
+          "description": "Catégorise l'état affectif exprimé dans un texte selon un inventaire discret d'émotions, indépendamment de la polarité (vs Sentiment) et sans dimension clinique ou de sévérité (vs Generic Psychological State).",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0003",
+      "label": "Topic / Subject",
+      "description": "Attribue un texte à un sujet thématique ou domaine de contenu parmi un inventaire prédéfini. Le jugement porte sur le sujet du texte, non sur un événement mentionné (vs Event Type) ni sur une orientation évaluative (vs Sentiment/Stance).",
+      "children": [
+        {
+          "id": "node_0052",
+          "label": "Generic Topic",
+          "description": "Assigne un texte à une catégorie thématique parmi un inventaire prédéfini de sujets ou domaines.",
+          "children": []
+        },
+        {
+          "id": "node_0053",
+          "label": "Event Type",
+          "description": "Classifie des mentions d'événements",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0004",
+      "label": "Intent",
+      "description": "Détermine l’objectif de l’utilisateur (demande, réservation, information, etc.)",
+      "children": []
+    },
+    {
+      "id": "node_0005",
+      "label": "Dialogue Act",
+      "description": "Catégorise la fonction d’un dialogue (question, réponse, accord, etc.)",
+      "children": []
+    },
+    {
+      "id": "node_0006",
+      "label": "NLI",
+      "description": "Évalue la relation logique explicite entre deux textes donnés (entailment, contradiction, neutral). Requiert une paire premisse/hypothèse, ce qui le distingue de Commonsense Plausibility (plausibilité d'un seul énoncé selon le sens commun) et de Logical Reasoning (validité formelle d'une chaîne inférentielle).",
+      "children": [
+        {
+          "id": "node_0015",
+          "label": "Domain-Specific NLI",
+          "description": "Benchmarks de NLI conçut spécifiquement pour un domaine d'aplication spécifique",
+          "children": []
+        },
+        {
+          "id": "node_0033",
+          "label": "Classical NLI",
+          "description": "Relation logique explicite entre deux textes ou propositions.",
+          "children": []
+        },
+        {
+          "id": "node_0035",
+          "label": "Pragmatic Inference",
+          "description": "Évalue une implication implicite dérivée du contexte pragmatique (sous-entendu, présupposition), non une relation logique explicite entre deux propositions (vs Classical NLI).",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0007",
+      "label": "Paraphrase",
+      "description": "Détermine si deux expressions partagent un sens équivalent malgré des formulations différentes.",
+      "children": []
+    },
+    {
+      "id": "node_0009",
+      "label": "Fact & Claim",
+      "description": "Vérifie si une affirmation est supportée, réfutée ou indéterminée en la confrontant à une preuve externe (texte source, évidence, connaissance de référence). La présence d'une preuve à confronter distingue ce nœud de Deception (signaux internes seuls) et de Machine-Generated Text (origine, pas véracité).",
+      "children": [
+        {
+          "id": "node_0029",
+          "label": "Evidence-based Verification",
+          "description": "Évalue si une preuve textuelle soutient, contredit ou ne permet pas de vérifier une affirmation.",
+          "children": []
+        },
+        {
+          "id": "node_0040",
+          "label": "Health Misinformation",
+          "description": "Évalue la validité d'affirmations sur santé, symptômes ou relations causales physiologiques",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0010",
+      "label": "Stance",
+      "description": "Détecte la position d’un texte pour/contre/neutre vis-à-vis d’une cible",
+      "children": [
+        {
+          "id": "node_0032",
+          "label": "Domain-Specific Stance",
+          "description": "Analyse la position exprimée dans un domaine nécessitant des connaissances contextuelles spécifiques.",
+          "children": []
+        },
+        {
+          "id": "node_0036",
+          "label": "Generic Stance",
+          "description": "Identifie la position favorable, défavorable ou neutre envers une cible donnée.",
+          "children": []
+        },
+        {
+          "id": "node_0037",
+          "label": "Ideological Stance",
+          "description": "Analyse des positions liées à des croyances politiques, sociales ou idéologiques.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0011",
+      "label": "Abusive Language",
+      "description": "Identifie le caractère nuisible d'un texte (hostilité, agression, attaque, offense), explicite ou implicite, ciblé ou non. Le jugement porte sur une hostilité ou une intention de nuire, ce qui le distingue de Stereotype & Social Bias (association généralisée attribuée à un groupe, pas nécessairement hostile) et de Social Norm (inadéquation sociale sans préjudice ciblé).",
+      "children": [
+        {
+          "id": "node_0047",
+          "label": "Contextual Conversational Harm",
+          "description": "Évalue le caractère nocif d'un énoncé conversationnel selon le contexte du dialogue",
+          "children": []
+        },
+        {
+          "id": "merge_0001",
+          "label": "Harm Intent",
+          "description": "Détermine si un texte contient du langage nuisible, hostile ou irrespectueux envers une cible (individu ou groupe) — insulte, agression, offense, dénigrement — qu'il soit explicite ou implicite, universel ou ancré dans des normes sociales/culturelles spécifiques. Couvre hate speech, offensive language, toxicity et violations de normes de respect. Se distingue de Stereotype & Social Bias (association généralisée non nécessairement hostile) et de Contextual Conversational Harm (nocivité décidable seulement via le contexte du dialogue).",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0012",
+      "label": "Mental Health / Wellbeing",
+      "description": "Identifie des états psychologiques/cliniques (type, présence, sévérité) et des indices conversationnels liés à l’accompagnement thérapeutique en contexte de santé mentale.",
+      "children": [
+        {
+          "id": "node_0041",
+          "label": "Counseling",
+          "description": "Identifie des comportements, techniques et actes thérapeutiques dans les échanges conseiller–patient (empathie, reformulation, guidance, alliance).",
+          "children": []
+        },
+        {
+          "id": "node_0042",
+          "label": "Suicide",
+          "description": "Évalue la présence et la sévérité d'intentions suicidaires ou d'auto-agression dans un texte",
+          "children": []
+        },
+        {
+          "id": "node_0043",
+          "label": "Substance Use",
+          "description": "Identifie états ou comportements liés à la consommation de substances à partir d'indices linguistiques",
+          "children": []
+        },
+        {
+          "id": "node_0028",
+          "label": "Generic Psychological State",
+          "description": "Identifie la présence, le type ou l'intensité d'un état psychologique ou clinique (dépression, anxiété, détresse), avec une dimension de condition ou de sévérité qui le distingue d'une émotion transitoire (vs Emotion).",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0013",
+      "label": "Machine-Generated Text",
+      "description": "Détermine si un texte a été produit par un humain ou par un système automatique, à partir de patrons linguistiques et stylistiques intrinsèques. Le jugement porte sur l'origine du texte, pas sur la véracité de son contenu (vs Fact & Claim) ni sur une intention trompeuse (vs Deception).",
+      "children": []
+    },
+    {
+      "id": "node_0016",
+      "label": "Event Factuality",
+      "description": "Ce nœud regroupe les tâches visant à qualifier le statut épistémique d'une assertion (degré de certitude, modalité, factualité perçue) plutôt que son contenu sémantique ou l'alignement idéologique de l'auteur.",
+      "children": []
+    },
+    {
+      "id": "node_0017",
+      "label": "Non-literal",
+      "description": "Distingue l'usage littéral vs figuratif d'une expression dans son contexte (métaphore, idiome, ironie, sarcasme, hyperbole, simile), à partir de cues sémantiques, contextuels et conventionnels.",
+      "children": [
+        {
+          "id": "node_0014",
+          "label": "Humor",
+          "description": "Détermine si un texte est conçu pour susciter l'amusement, à partir d'indices linguistiques et structurels d'intention comique.",
+          "children": []
+        },
+        {
+          "id": "node_0023",
+          "label": "Satire & Parody",
+          "description": "Détecte si un texte utilise des procédés satiriques ou parodiques (ironie, exagération, mimétisme critique) pour produire un effet comique-critique.",
+          "children": []
+        },
+        {
+          "id": "node_0049",
+          "label": "Figurative Language",
+          "description": "usage non-littéral incluant métaphore, idiome, hyperbole, ironie et sarcasme.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0018",
+      "label": "Text Quality",
+      "description": "Évalue la qualité linguistique ou rédactionnelle d'un texte selon des critères normatifs (grammaire, cohérence, vocabulaire, niveau de compétence).",
+      "children": [
+        {
+          "id": "node_0019",
+          "label": "Linguistic Acceptability",
+          "description": "Détermine si une phrase est grammaticalement bien-formée selon les normes syntaxiques d'une langue",
+          "children": []
+        },
+        {
+          "id": "node_0020",
+          "label": "Writing Quality & Proficiency",
+          "description": "Attribue une note à une production écrite selon des critères de qualité globale (vocabulaire, cohérence, argumentation, niveau CEFR)",
+          "children": []
+        },
+        {
+          "id": "node_0045",
+          "label": "Register & Formality",
+          "description": "Évalue le degré de conformité d'un texte à un registre ou niveau de formalité",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0021",
+      "label": "Word Sense Disambiguation (WSD)",
+      "description": "Identifie le sens lexical d'un mot ou la nature sémantique d'une expression dans son contexte, ancré sur un inventaire lexical-sémantique prédéfini",
+      "children": []
+    },
+    {
+      "id": "node_0024",
+      "label": "Author Profiling",
+      "description": "Infère des attributs de l’auteur à partir de son texte (origine linguistique, variété, langue maternelle, démographie, traits psychologiques/personnalité).",
+      "children": [
+        {
+          "id": "node_0044",
+          "label": "Native Language Identification",
+          "description": "Identifie la langue maternelle d'un auteur",
+          "children": []
+        },
+        {
+          "id": "node_0050",
+          "label": "Regional Variant",
+          "description": "Identifie la variété régionale, géographique ou communautaire d'une langue à partir de marqueurs",
+          "children": []
+        },
+        {
+          "id": "node_0051",
+          "label": "Demographic Inference",
+          "description": "Infère des attributs démographiques ou sociaux d'un auteur",
+          "children": []
+        },
+        {
+          "id": "node_0055",
+          "label": "Personality",
+          "description": "Infère des traits psychologiques stables ou dispositions de personnalité",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "node_0025",
+      "label": "Rule Compliance",
+      "description": "Évalue si un texte satisfait des règles ou critères prédéfinis (légaux, réglementaires, éligibilité) pour produire un jugement de conformité.",
+      "children": []
+    },
+    {
+      "id": "node_0030",
+      "label": "Deception",
+      "description": "Juge la véracité ou l'intention trompeuse d'un texte à partir de signaux stylistiques et structurels internes, sans confrontation à une preuve externe (vs Fact & Claim, qui requiert une évidence).",
+      "children": []
+    },
+    {
+      "id": "node_0031",
+      "label": "Stereotype & Social Bias",
+      "description": "Identifie l'expression d'un stéréotype, biais ou association généralisée attribuée à un groupe social, explicite ou subtile. Le jugement porte sur la généralisation attribuée à un groupe, non sur une hostilité (vs Abusive Language, qui requiert une intention de nuire).",
+      "children": []
+    },
+    {
+      "id": "node_0038",
+      "label": "Commonsense Plausibility",
+      "description": "Juge la plausibilité d'un événement, d'une continuation narrative ou d'une explication selon le sens commun et la connaissance du monde, sans paire logique explicite (vs NLI) ni chaîne formelle (vs Logical Reasoning).",
+      "children": []
+    },
+    {
+      "id": "node_0054",
+      "label": "Crisis & Urgency",
+      "description": "Détermine si un texte court signale une situation critique ou requiert une action immédiate dans un contexte d'urgence",
+      "children": []
+    },
+    {
+      "id": "node_0034",
+      "label": "Logical Reasoning",
+      "description": "Évalue la validité formelle d'un raisonnement ou d'une chaîne inférentielle, indépendamment du contenu de sens commun (vs Commonsense Plausibility) et sans se réduire à une relation premisse/hypothèse (vs NLI).",
+      "children": []
+    },
+    {
+      "id": "node_0008",
+      "label": "Social Norm",
+      "description": "Évalue l’adéquation d’un énoncé aux conventions sociales (politesse, étiquette, convenance culturelle) sans intention de nuire ni contenu abusif ciblé.",
+      "children": []
+    },
+    {
+      "id": "node_0022",
+      "label": "Language Identification",
+      "description": "Identifie la langue d'un texte parmi un inventaire de langues, à partir de patrons orthographiques et lexicaux.",
+      "children": []
+    }
+  ]
+}

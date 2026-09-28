@@ -1,0 +1,318 @@
+rank,domain_label,n_papers,domain_source,pct
+1,social_media,373,normalized,27.59
+2,general,357,normalized,26.41
+3,news_media,64,normalized,4.73
+4,biomedical,42,normalized,3.11
+5,legal,32,normalized,2.37
+6,education,25,normalized,1.85
+7,finance,16,normalized,1.18
+8,literary,14,normalized,1.04
+9,e_commerce,13,normalized,0.96
+10,scientific,13,normalized,0.96
+11,linguistics,12,normalized,0.89
+12,social_interaction,12,normalized,0.89
+13,healthcare,11,normalized,0.81
+14,social_science,10,normalized,0.74
+15,political,9,normalized,0.67
+16,academic,8,normalized,0.59
+17,mental_health,7,normalized,0.52
+18,[raw] social media (Twitter),6,raw_only,0.44
+19,entertainment,5,normalized,0.37
+20,[raw] general,4,raw_only,0.3
+21,entertainment_media,4,normalized,0.3
+22,clinical,3,normalized,0.22
+23,cultural,3,normalized,0.22
+24,health,3,normalized,0.22
+25,linguistic,3,normalized,0.22
+26,hospitality,3,normalized,0.22
+27,[raw] e-commerce product reviews,2,raw_only,0.15
+28,[raw] social media conversations (Twitter),2,raw_only,0.15
+29,cybersecurity,2,normalized,0.15
+30,games,2,normalized,0.15
+31,enterprise,2,normalized,0.15
+32,political_science,2,normalized,0.15
+33,software_engineering,2,normalized,0.15
+34,social_norms,2,normalized,0.15
+35,scientific_literature,2,normalized,0.15
+36,[raw] authentic online interactions evading censorship,1,raw_only,0.07
+37,[raw] adolescent mental health and cognitive distortions,1,raw_only,0.07
+38,[raw] administrative receipts,1,raw_only,0.07
+39,"[raw] YouTube transcripts from transgender, cisgender, and non-binary speakers",1,raw_only,0.07
+40,[raw] Wikipedia-sourced premises and hypotheses,1,raw_only,0.07
+41,[raw] Wikipedia article revisions,1,raw_only,0.07
+42,[raw] Wikipedia Talk pages,1,raw_only,0.07
+43,[raw] USA political news articles,1,raw_only,0.07
+44,[raw] Romanian tweets from social media,1,raw_only,0.07
+45,social_issues,1,normalized,0.07
+46,social_interactions,1,normalized,0.07
+47,[raw] Indigenous languages of Alaska,1,raw_only,0.07
+48,"[raw] do-it-yourself (DIY), cooking, and automotive technical texts",1,raw_only,0.07
+49,"[raw] diverse writing systems, symbolic and non-symbolic communication systems",1,raw_only,0.07
+50,"[raw] diverse domains including linguistics, social studies, and science; naturally occurring and synthetic harmful prompts",1,raw_only,0.07
+51,[raw] dialogue communication,1,raw_only,0.07
+52,[raw] dialectal Arabic forum novels,1,raw_only,0.07
+53,[raw] deceptive and truthful interviews in a game framework,1,raw_only,0.07
+54,[raw] cybercrime detection in Roman Urdu under Pakistani legal framework,1,raw_only,0.07
+55,[raw] customer support tweets,1,raw_only,0.07
+56,[raw] conversational discourse,1,raw_only,0.07
+57,[raw] conversational agents (chatbots),1,raw_only,0.07
+58,[raw] contemporary written German (linguistic corpus),1,raw_only,0.07
+59,[raw] contemporary societal debates and controversial questions,1,raw_only,0.07
+60,[raw] conflict and protest events,1,raw_only,0.07
+61,[raw] community-based social media discussions about drug use,1,raw_only,0.07
+62,[raw] Korean idioms and cultural expressions,1,raw_only,0.07
+63,[raw] Japanese civil case judgments on torts,1,raw_only,0.07
+64,[raw] general common-sense knowledge,1,raw_only,0.07
+65,[raw] general (word sense disambiguation in context),1,raw_only,0.07
+66,"[raw] general (news, articles, and other text sources)",1,raw_only,0.07
+67,[raw] gambling addiction and pathological behavior,1,raw_only,0.07
+68,[raw] financial earnings conference call transcripts,1,raw_only,0.07
+69,[raw] figurative language in cultural and regional communication,1,raw_only,0.07
+70,[raw] figurative language (idioms and metaphors),1,raw_only,0.07
+71,[raw] fictional literature (novels),1,raw_only,0.07
+72,[raw] fictional interpersonal conversations,1,raw_only,0.07
+73,[raw] everyday language use,1,raw_only,0.07
+74,[raw] everyday conversational dialogs,1,raw_only,0.07
+75,[raw] educational language exams (middle-school and high-school),1,raw_only,0.07
+76,[raw] educational conversations between teachers and second-language learners,1,raw_only,0.07
+77,[raw] educational and learner-oriented texts,1,raw_only,0.07
+78,[raw] general linguistic reasoning,1,raw_only,0.07
+79,"[raw] general language, adjective-noun collocations",1,raw_only,0.07
+80,[raw] general language with emphasis on negation,1,raw_only,0.07
+81,[raw] general knowledge questions,1,raw_only,0.07
+82,"[raw] general knowledge facts (e.g., political, sports)",1,raw_only,0.07
+83,[raw] general knowledge and misinformation,1,raw_only,0.07
+84,"[raw] general knowledge (biological categories, e.g., animals, plants)",1,raw_only,0.07
+85,[raw] general knowledge (Wikipedia-derived),1,raw_only,0.07
+86,[raw] general factual statements,1,raw_only,0.07
+87,[raw] general factual claims,1,raw_only,0.07
+88,[raw] general fact-checking,1,raw_only,0.07
+89,[raw] general event narratives,1,raw_only,0.07
+90,"[raw] general domain, Chinese text",1,raw_only,0.07
+91,[raw] general daily life scenarios involving numerical quantities,1,raw_only,0.07
+92,[raw] general communication,1,raw_only,0.07
+93,[raw] general common-sense reasoning about adjective-noun pairs in event contexts,1,raw_only,0.07
+94,[raw] lexicography and lexical semantics,1,raw_only,0.07
+95,[raw] lexical semantics,1,raw_only,0.07
+96,[raw] legal contracts (SEC filings),1,raw_only,0.07
+97,[raw] legal bar exam questions,1,raw_only,0.07
+98,[raw] learner sentences,1,raw_only,0.07
+99,[raw] learner essays and Wikipedia edits in Greek,1,raw_only,0.07
+100,[raw] interactive fiction narratives,1,raw_only,0.07
+101,[raw] information-seeking questions and derived claims,1,raw_only,0.07
+102,[raw] human-agent dialogues for personality assessment,1,raw_only,0.07
+103,[raw] historical literary texts (Danish and Norwegian novels from the late 19th century),1,raw_only,0.07
+104,"[raw] historical linguistics, Romance languages",1,raw_only,0.07
+105,[raw] historical Danish and Norwegian literary texts (late 19th century novels),1,raw_only,0.07
+106,"[raw] healthcare professions (e.g., medicine, optometry, audiology, alternative medicine)",1,raw_only,0.07
+107,[raw] health and medical advice,1,raw_only,0.07
+108,"[raw] general-purpose German text, including dialog systems",1,raw_only,0.07
+109,[raw] general linguistics,1,raw_only,0.07
+110,[raw] mixed-domain professional reviews from news sources,1,raw_only,0.07
+111,[raw] medical randomized controlled trial abstracts,1,raw_only,0.07
+112,[raw] math education,1,raw_only,0.07
+113,[raw] long narratives with curated mention types and entities,1,raw_only,0.07
+114,[raw] logical reasoning problems adapted from psychological experiments,1,raw_only,0.07
+115,[raw] logical reasoning in natural language,1,raw_only,0.07
+116,[raw] literature and online narratives,1,raw_only,0.07
+117,[raw] literary works (full-length books),1,raw_only,0.07
+118,"[raw] literary text (ancient Greek epic poetry, modern Greek translation)",1,raw_only,0.07
+119,"[raw] linguistics, lexical semantics",1,raw_only,0.07
+120,[raw] linguistics (syntax and semantics),1,raw_only,0.07
+121,[raw] linguistic publications and generative model outputs,1,raw_only,0.07
+122,[raw] linguistic pragmatics and clause-embedding verbs,1,raw_only,0.07
+123,[raw] linguistic norms and grammatical rules,1,raw_only,0.07
+124,[raw] linguistic morphology of Slavic verbs,1,raw_only,0.07
+125,"[raw] linguistic constructions in English, focusing on dative alternation with varied argument definiteness and length",1,raw_only,0.07
+126,[raw] online hotel reviews,1,raw_only,0.07
+127,[raw] news media,1,raw_only,0.07
+128,[raw] news headlines,1,raw_only,0.07
+129,[raw] news articles on global warming debate,1,raw_only,0.07
+130,[raw] news articles from various domains,1,raw_only,0.07
+131,[raw] news articles from diverse media sources,1,raw_only,0.07
+132,[raw] news articles covering diverse sources and geographic regions,1,raw_only,0.07
+133,[raw] news (headlines and lead paragraphs),1,raw_only,0.07
+134,[raw] neuro-psychiatric patients with Excessive Daytime Sleepiness (SDE),1,raw_only,0.07
+135,"[raw] naturalistic simulated dialogues between familiar social partners (friends, family, romantic partners) in conflict scenarios",1,raw_only,0.07
+136,[raw] natural language inference with perturbed premises,1,raw_only,0.07
+137,[raw] narrative texts and folktales,1,raw_only,0.07
+138,"[raw] multi-domain (e.g., politics, public health)",1,raw_only,0.07
+139,[raw] movie transcripts (conversational text),1,raw_only,0.07
+140,[raw] movie subtitles,1,raw_only,0.07
+141,[raw] movie reviews,1,raw_only,0.07
+142,[raw] privacy policies and terms of service,1,raw_only,0.07
+143,[raw] political reasoning and logical inference,1,raw_only,0.07
+144,[raw] political quotes from Danish politicians,1,raw_only,0.07
+145,[raw] political discourse,1,raw_only,0.07
+146,[raw] political debates (parliamentary proceedings),1,raw_only,0.07
+147,[raw] political campaign text (media releases and speech transcripts),1,raw_only,0.07
+148,[raw] patient-generated health discussions in online forums,1,raw_only,0.07
+149,[raw] parliamentary questions and answers,1,raw_only,0.07
+150,[raw] parliamentary proceedings,1,raw_only,0.07
+151,[raw] open-domain conversational dialogues (human-human and human-bot),1,raw_only,0.07
+152,[raw] open-domain (user-defined taxonomies),1,raw_only,0.07
+153,[raw] online social media posts,1,raw_only,0.07
+154,[raw] online social interactions,1,raw_only,0.07
+155,[raw] online product reviews from e-commerce platforms,1,raw_only,0.07
+156,[raw] online multiparty chats collected via role-playing game in high-schools,1,raw_only,0.07
+157,[raw] online interactions and textual communication,1,raw_only,0.07
+158,"[raw] social media (Reddit), student essays, and argumentation datasets",1,raw_only,0.07
+159,[raw] social dialogs and empathetic conversations,1,raw_only,0.07
+160,[raw] social deduction games with deception and persuasion,1,raw_only,0.07
+161,[raw] social biases and offensive language in text progressions,1,raw_only,0.07
+162,[raw] social and interpersonal behaviors in everyday situations,1,raw_only,0.07
+163,[raw] second-language (L2) written text corrupted by native language (L1) phonetic influences,1,raw_only,0.07
+164,"[raw] second language (L2) learning, sentence translation exercises",1,raw_only,0.07
+165,[raw] scientific research literature,1,raw_only,0.07
+166,[raw] scientific publications and tables,1,raw_only,0.07
+167,[raw] religious texts (Bible translations),1,raw_only,0.07
+168,[raw] real-world user-AI conversations from an open-source chatbot,1,raw_only,0.07
+169,[raw] real-world queries and retrieved contexts for claim verification,1,raw_only,0.07
+170,[raw] real-life scenarios involving physical safety advice,1,raw_only,0.07
+171,[raw] real-life scenarios (videos of deceptive and truthful communication),1,raw_only,0.07
+172,[raw] public debate on nuclear energy,1,raw_only,0.07
+173,[raw] prompt injection defense and security for LLMs,1,raw_only,0.07
+174,[raw] social media discussions about water crisis,1,raw_only,0.07
+175,[raw] social media discussions about autism and neurodiversity,1,raw_only,0.07
+176,[raw] social media discussions about European solidarity,1,raw_only,0.07
+177,[raw] social media discourse related to anti-Asian sentiment during public health crises,1,raw_only,0.07
+178,[raw] COVID-19 vaccine discussions and fact-checked claims,1,raw_only,0.07
+179,[raw] social media conversational threads discussing racial hoaxes and stereotypes,1,raw_only,0.07
+180,[raw] social media content,1,raw_only,0.07
+181,[raw] social media comments from Reddit in a multilingual urban context,1,raw_only,0.07
+182,[raw] social media comments (YouTube),1,raw_only,0.07
+183,[raw] social media claims related to the Russo-Ukrainian conflict,1,raw_only,0.07
+184,[raw] social media and product reviews (implied by politicians and brands),1,raw_only,0.07
+185,[raw] social media and online discourse involving identity groups,1,raw_only,0.07
+186,[raw] social media and online communication,1,raw_only,0.07
+187,[raw] social media and internet forums,1,raw_only,0.07
+188,[raw] social media (tweets in Arabizi),1,raw_only,0.07
+189,"[raw] social media (Twitter), Libyan Arabic dialects",1,raw_only,0.07
+190,[raw] social media posts related to mental health,1,raw_only,0.07
+191,[raw] social media posts in Levantine Arabic dialects,1,raw_only,0.07
+192,[raw] social media posts from geographically and demographically diverse cities,1,raw_only,0.07
+193,[raw] social media posts from U.S. Twitter users,1,raw_only,0.07
+194,[raw] social media posts from Reddit,1,raw_only,0.07
+195,[raw] social media posts during wartime,1,raw_only,0.07
+196,[raw] social media posts about unspecified topics,1,raw_only,0.07
+197,[raw] social media posts about bullying,1,raw_only,0.07
+198,[raw] social media posts,1,raw_only,0.07
+199,[raw] social media microblogs (tweets),1,raw_only,0.07
+200,[raw] social media messages in Arabic micro-varieties,1,raw_only,0.07
+201,[raw] social media messages containing emojis,1,raw_only,0.07
+202,[raw] social media memes with Bengali and code-mixed captions,1,raw_only,0.07
+203,[raw] social media healthcare requests,1,raw_only,0.07
+204,[raw] social media health discourse,1,raw_only,0.07
+205,[raw] social media forum posts,1,raw_only,0.07
+206,[raw] summarization,1,raw_only,0.07
+207,[raw] student essays in education,1,raw_only,0.07
+208,[raw] spontaneous oral conversations during meals,1,raw_only,0.07
+209,[raw] spoken language transcription,1,raw_only,0.07
+210,[raw] software development code reviews,1,raw_only,0.07
+211,[raw] social_media_jokes,1,raw_only,0.07
+212,"[raw] social stereotypes across gender, profession, nationality, race, religion, and LGBTQ+ topics",1,raw_only,0.07
+213,[raw] social narratives and automated text generation,1,raw_only,0.07
+214,[raw] social media-style synthetic text with demographic group references,1,raw_only,0.07
+215,[raw] social media user-generated content (Twitter),1,raw_only,0.07
+216,[raw] social media user-generated content,1,raw_only,0.07
+217,[raw] social media text,1,raw_only,0.07
+218,[raw] social media reviews and opinionated texts,1,raw_only,0.07
+219,[raw] social media responses to immigrant-related hoaxes,1,raw_only,0.07
+220,[raw] social media posts with phonetic cloaking,1,raw_only,0.07
+221,[raw] social media posts relating to natural crises,1,raw_only,0.07
+222,consumer_behavior,1,normalized,0.07
+223,computer_science,1,normalized,0.07
+224,collaborative_editing,1,normalized,0.07
+225,clinical_psychology,1,normalized,0.07
+226,[raw] Chinese literary texts,1,raw_only,0.07
+227,business,1,normalized,0.07
+228,automotive,1,normalized,0.07
+229,academic_education,1,normalized,0.07
+230,[raw] various domains and topics (Dutch texts),1,raw_only,0.07
+231,[raw] university students' peer feedback in online education,1,raw_only,0.07
+232,[raw] typologically and phylogenetically related low-resourced East African languages using the Ge’ez script,1,raw_only,0.07
+233,[raw] tourism websites,1,raw_only,0.07
+234,[raw] text classification (general),1,raw_only,0.07
+235,[raw] television sitcom dialogue,1,raw_only,0.07
+236,[raw] telephone conversations,1,raw_only,0.07
+237,[raw] synthetic transformations of natural language entailment examples,1,raw_only,0.07
+238,employment,1,normalized,0.07
+239,educational_media,1,normalized,0.07
+240,dialogue,1,normalized,0.07
+241,dialog_systems,1,normalized,0.07
+242,developmental_psychology,1,normalized,0.07
+243,[raw] Chinese social media microblogs,1,raw_only,0.07
+244,cultural_institution,1,normalized,0.07
+245,cultural_heritage,1,normalized,0.07
+246,cultural_folklore,1,normalized,0.07
+247,[raw] Chinese social media posts,1,raw_only,0.07
+248,creative_text,1,normalized,0.07
+249,corporate_finance,1,normalized,0.07
+250,corporate_communication,1,normalized,0.07
+251,corporate,1,normalized,0.07
+252,conversational_ai,1,normalized,0.07
+253,consumer_reviews,1,normalized,0.07
+254,historical_linguistics,1,normalized,0.07
+255,historical,1,normalized,0.07
+256,healthcare_social_media,1,normalized,0.07
+257,health_social_media,1,normalized,0.07
+258,health_media,1,normalized,0.07
+259,[raw] English-language poetry,1,raw_only,0.07
+260,government,1,normalized,0.07
+261,geospatial,1,normalized,0.07
+262,geopolitics,1,normalized,0.07
+263,religious_legal,1,normalized,0.07
+264,forensic_psychology,1,normalized,0.07
+265,food,1,normalized,0.07
+266,fiction,1,normalized,0.07
+267,[raw] French tweets,1,raw_only,0.07
+268,[raw] Finnish learner writings,1,raw_only,0.07
+269,military,1,normalized,0.07
+270,religious,1,normalized,0.07
+271,real_estate,1,normalized,0.07
+272,public_services,1,normalized,0.07
+273,public_health,1,normalized,0.07
+274,psychological,1,normalized,0.07
+275,[raw] European Union legal documents and public administration,1,raw_only,0.07
+276,political_discourse,1,normalized,0.07
+277,[raw] clinical medical records,1,raw_only,0.07
+278,legal_transportation,1,normalized,0.07
+279,legal_education,1,normalized,0.07
+280,knowledge_representation,1,normalized,0.07
+281,humanitarian,1,normalized,0.07
+282,human_robot_interaction,1,normalized,0.07
+283,human_resources,1,normalized,0.07
+284,human_computer_interaction,1,normalized,0.07
+285,[raw] Bengali social media text,1,raw_only,0.07
+286,social_good,1,normalized,0.07
+287,[raw] German political Twitter postings,1,raw_only,0.07
+288,web_content,1,normalized,0.07
+289,visual_media,1,normalized,0.07
+290,tourism,1,normalized,0.07
+291,sustainability,1,normalized,0.07
+292,substance_use,1,normalized,0.07
+293,spoken_language,1,normalized,0.07
+294,[raw] clinical electronic health records (EHRs) for Alzheimer’s Disease patients,1,raw_only,0.07
+295,software_development,1,normalized,0.07
+296,social_strategy_games,1,normalized,0.07
+297,[raw] book reviews,1,raw_only,0.07
+298,policy,1,normalized,0.07
+299,organizational_communication,1,normalized,0.07
+300,organizational,1,normalized,0.07
+301,[raw] AI-generated and real news image-caption pairs,1,raw_only,0.07
+302,web_documents,1,normalized,0.07
+303,medical,1,normalized,0.07
+304,media_reviews,1,normalized,0.07
+305,mathematics,1,normalized,0.07
+306,mathematical_reasoning,1,normalized,0.07
+307,marketing,1,normalized,0.07
+308,literature,1,normalized,0.07
+309,literary_historical,1,normalized,0.07
+310,literary_analysis,1,normalized,0.07
+311,[raw] commonsense reasoning,1,raw_only,0.07
+312,[raw] commonsense and world knowledge,1,raw_only,0.07
+313,[raw] clinical medical records and patient histories,1,raw_only,0.07
+314,[raw] French press articles from sources considered unreliable by expert agencies,1,raw_only,0.07
+315,scientific_publications,1,normalized,0.07
+316,[raw] biomedical literature abstracts focusing on mechanistic interactions,1,raw_only,0.07
+317,[raw] COVID-19 misinformation and scientific claims,1,raw_only,0.07
