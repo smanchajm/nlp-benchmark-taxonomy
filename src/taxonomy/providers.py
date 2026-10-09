@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import tempfile
+from pathlib import Path
 
 import instructor
 import pandas as pd
@@ -24,7 +25,12 @@ MODEL_MAP: dict[str, str] = {
     "mistral": "mistral-large-latest",
     "claude": "claude-3-haiku-20240307",
     "gemini": "gemini-1.5-flash-latest",
-    "deepseek": "deepseek-chat",
+    # Version explicite, pas l'alias `deepseek-chat` : celui-ci a route
+    # successivement vers V2, V2.5, V3, V3.1, V3.2 puis V4-Flash, et a ete
+    # retire le 24/07/2026. Le vote d'avril 2026 est anterieur a la sortie de V4
+    # (24/04/2026), il a donc tourne sur un V3 pleine taille — d'ou ce choix de
+    # la gamme Pro plutot que Flash, a niveau de capacite comparable.
+    "deepseek": "deepseek-v4-pro",
     "openrouter": "google/gemma-4-31b-it",
     "openai": "gpt-5.4-mini",
 }
@@ -54,6 +60,9 @@ def create_client(provider: str, *, async_: bool = False):
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
         return instructor.from_gemini(genai.GenerativeModel("gemini-1.5-flash-latest"))
     if provider == "deepseek":
+        # Mode.JSON et non TOOLS : deepseek-v4-pro est un modele a raisonnement et
+        # rejette le tool_choice force ("Thinking mode does not support this
+        # tool_choice"). Le mode JSON passe sur les deux gammes.
         if async_:
             from openai import AsyncOpenAI
 
@@ -61,7 +70,8 @@ def create_client(provider: str, *, async_: bool = False):
                 AsyncOpenAI(
                     api_key=os.getenv("DEEPSEEK_API_KEY"),
                     base_url="https://api.deepseek.com",
-                )
+                ),
+                mode=instructor.Mode.JSON,
             )
         from openai import OpenAI
 
@@ -69,7 +79,8 @@ def create_client(provider: str, *, async_: bool = False):
             OpenAI(
                 api_key=os.getenv("DEEPSEEK_API_KEY"),
                 base_url="https://api.deepseek.com",
-            )
+            ),
+            mode=instructor.Mode.JSON,
         )
     if provider == "openrouter":
         if async_:
@@ -131,14 +142,53 @@ async def _classify_paper_async(
 def _save_checkpoint_indexed(
     df: pd.DataFrame, results: list[tuple[int, dict]], path: str, prefix: str = "llm"
 ) -> None:
+    """Ecrit un checkpoint en FUSIONNANT avec ce qui s'y trouve deja.
+
+    La fusion n'est pas un detail : ``df`` ne contient que le sous-ensemble en
+    cours de traitement. Sans fusion, une reprise partielle ecrase les votes
+    obtenus lors des passes precedentes des la premiere sauvegarde periodique.
+    """
     sorted_results = sorted(results, key=lambda x: x[0])
     res_df = pd.DataFrame([r for _, r in sorted_results]).rename(
         columns=lambda c: f"{prefix}_{c}"
     )
     idxs = [i for i, _ in sorted_results]
     out = pd.concat([df.iloc[idxs].reset_index(drop=True), res_df], axis=1)
+
+    if Path(path).exists() and "bibkey" in out.columns:
+        ancien = pd.read_parquet(path)
+        if "bibkey" in ancien.columns:
+            nouveaux = set(out["bibkey"].astype(str))
+            ancien = ancien[~ancien["bibkey"].astype(str).isin(nouveaux)]
+            out = pd.concat([ancien, out], ignore_index=True)
+
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     out.to_parquet(path, index=False)
-    logger.info("Checkpoint saved: %d/%d papers → %s", len(results), len(df), path)
+    # Pas de fleche unicode : la console Windows (cp1252) leve une
+    # UnicodeEncodeError a chaque sauvegarde et pollue les journaux.
+    logger.info(
+        "Checkpoint saved: %d nouveaux, %d au total -> %s", len(results), len(out), path
+    )
+
+
+def _load_done_bibkeys(checkpoint_path: str | None, provider: str) -> set[str]:
+    """``bibkey`` déjà traités dans un checkpoint, hors échecs d'API.
+
+    Un papier dont la justification est ``API Error`` n'est PAS considéré comme
+    fait : il doit être retenté, sinon un incident réseau se solde par une
+    exclusion définitive.
+    """
+    if not checkpoint_path or not Path(checkpoint_path).exists():
+        return set()
+    done = pd.read_parquet(checkpoint_path)
+    if "bibkey" not in done.columns:
+        logger.warning("Checkpoint sans bibkey (%s) — reprise impossible.", checkpoint_path)
+        return set()
+    just_col = f"{provider}_justification"
+    if just_col in done.columns:
+        done = done[done[just_col].fillna("") != "API Error"]
+    logger.info("Reprise: %d papiers déjà traités dans %s", len(done), checkpoint_path)
+    return set(done["bibkey"].astype(str))
 
 
 async def label_papers_async(
@@ -148,12 +198,31 @@ async def label_papers_async(
     max_concurrent: int = 20,
     checkpoint_path: str | None = None,
     checkpoint_every: int = 50,
+    resume: bool = True,
 ) -> pd.DataFrame:
-    """Classify papers concurrently with a semaphore-based pool."""
+    """Classify papers concurrently with a semaphore-based pool.
+
+    ``resume=True`` skips papers already present in ``checkpoint_path`` (keyed on
+    ``bibkey``), so an interrupted run costs nothing to restart. API failures are
+    counted and reported: they land as ``UNSURE / "API Error"`` and are retried on
+    the next run rather than silently standing as an exclusion vote.
+    """
+    todo = df
+    if resume and checkpoint_path:
+        done = _load_done_bibkeys(checkpoint_path, provider)
+        if done:
+            if "bibkey" not in df.columns:
+                raise ValueError("resume=True exige une colonne 'bibkey' dans df.")
+            todo = df[~df["bibkey"].astype(str).isin(done)].reset_index(drop=True)
+            logger.info("Reprise: %d/%d papiers restants.", len(todo), len(df))
+    if todo.empty:
+        logger.info("Rien à faire: tout est déjà dans le checkpoint.")
+        return pd.read_parquet(checkpoint_path) if checkpoint_path else df
+
     client = create_client(provider, async_=True)
     sem = asyncio.Semaphore(max_concurrent)
     results: list[tuple[int, dict]] = []
-    pbar = tqdm(total=len(df), desc=f"{provider}/{task}")
+    pbar = tqdm(total=len(todo), desc=f"{provider}/{task}")
 
     async def _process(idx: int, title: str, abstract: str):
         async with sem:
@@ -163,10 +232,15 @@ async def label_papers_async(
             results.append((idx, res.model_dump()))
             pbar.update(1)
             if checkpoint_path and len(results) % checkpoint_every == 0:
-                _save_checkpoint_indexed(df, results, checkpoint_path, prefix=provider)
+                _save_checkpoint_indexed(
+                    todo, results, checkpoint_path, prefix=provider
+                )
 
     await asyncio.gather(
-        *[_process(i, r.title, str(r.abstract)) for i, r in enumerate(df.itertuples())]
+        *[
+            _process(i, r.title, str(r.abstract))
+            for i, r in enumerate(todo.itertuples())
+        ]
     )
     pbar.close()
 
@@ -174,9 +248,28 @@ async def label_papers_async(
     res_df = pd.DataFrame([r for _, r in results]).rename(
         columns=lambda c: f"{provider}_{c}"
     )
+    out = pd.concat([todo.reset_index(drop=True), res_df], axis=1)
+
+    just_col = f"{provider}_justification"
+    n_err = int((out[just_col] == "API Error").sum()) if just_col in out.columns else 0
+    if n_err:
+        logger.warning(
+            "%d/%d appels ont échoué (API Error) — NON comptés comme un vote. "
+            "Relancer avec le même checkpoint pour les retenter.",
+            n_err,
+            len(out),
+        )
+
     if checkpoint_path:
-        _save_checkpoint_indexed(df, results, checkpoint_path, prefix=provider)
-    return pd.concat([df.reset_index(drop=True), res_df], axis=1)
+        # Fusionne avec ce qui existait déjà, pour que le checkpoint reste complet.
+        if Path(checkpoint_path).exists():
+            ancien = pd.read_parquet(checkpoint_path)
+            if "bibkey" in ancien.columns and "bibkey" in out.columns:
+                ancien = ancien[~ancien["bibkey"].astype(str).isin(out["bibkey"].astype(str))]
+                out = pd.concat([ancien, out], ignore_index=True)
+        out.to_parquet(checkpoint_path, index=False)
+        logger.info("Checkpoint final: %d papiers -> %s", len(out), checkpoint_path)
+    return out
 
 
 def _mistral_build_batch_lines(
