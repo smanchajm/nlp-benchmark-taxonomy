@@ -29,6 +29,7 @@ TAXONOMY_PATH = (
     / "clustering_set_mistral_leaf_assignments.parquet"
 )
 EXCLUSIONS_PATH = DATA / "taxonomy" / "manual_exclusions.parquet"
+ELIGIBILITY_VOTE_PATH = DATA / "taxonomy" / "eligibility_v2" / "vote_FINAL.parquet"
 THEMATIC_DOMAINS_PATH = (
     DATA
     / "taxonomy"
@@ -151,6 +152,38 @@ def load_exclusions(path: Path) -> set[str]:
     return set(df["bibkey"].dropna().astype(str))
 
 
+def load_ineligible(path: Path) -> set[str]:
+    """``bibkey`` écartés par le vote d'éligibilité v2, règle majoritaire.
+
+    Même règle d'agrégation que le vote d'avril — exclu si au moins deux des
+    trois votants rejettent — appliquée au prompt corrigé. Un vote absent
+    (échec de parsing) ne compte pas comme un rejet.
+
+    Ce filtre appartient au builder et non à un script ponctuel : sans lui, une
+    reconstruction régénérerait le corpus non filtré et annulerait le vote sans
+    le moindre signal.
+    """
+    if not path.is_file():
+        logger.warning("Vote d'éligibilité absent (%s) — aucun filtre appliqué.", path)
+        return set()
+
+    df = pd.read_parquet(path)
+    _require_columns(df, ["bibkey", "mistral", "google", "deepseek"], str(path))
+    votants = ["mistral", "google", "deepseek"]
+    rejets = sum(
+        (df[c].notna() & (df[c].astype(str) != "POSITIVE") & (df[c].astype(str) != "nan")).astype(int)
+        for c in votants
+    )
+    ineligibles = set(df.loc[rejets >= 2, "bibkey"].astype(str))
+    logger.info(
+        "Éligibilité v2: %d/%d papiers rejetés par la majorité (%s).",
+        len(ineligibles),
+        len(df),
+        path.name,
+    )
+    return ineligibles
+
+
 def build() -> pd.DataFrame:
     taxonomy = load_taxonomy(TAXONOMY_PATH)
     anthology = load_anthology(ANTHOLOGY_PATH)
@@ -170,7 +203,17 @@ def build() -> pd.DataFrame:
     before = len(df)
     df = df.loc[~df["bibkey"].astype(str).isin(exclusions)].copy()
     logger.info(
-        "Exclusions: %d lignes retirees (%d -> %d).",
+        "Exclusions manuelles: %d lignes retirees (%d -> %d).",
+        before - len(df),
+        before,
+        len(df),
+    )
+
+    ineligibles = load_ineligible(ELIGIBILITY_VOTE_PATH)
+    before = len(df)
+    df = df.loc[~df["bibkey"].astype(str).isin(ineligibles)].copy()
+    logger.info(
+        "Filtre d'eligibilite: %d lignes retirees (%d -> %d).",
         before - len(df),
         before,
         len(df),

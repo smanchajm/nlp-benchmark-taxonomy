@@ -248,6 +248,19 @@ data/taxonomy/*
 !data/taxonomy/merged.parquet
 !data/taxonomy/analysis/
 
+# Eligibility vote v2 (2026-09-30). build_single_task_benchmark_paper.py reads
+# vote_FINAL.parquet to filter the corpus; without it a rebuild silently ships
+# the unfiltered 1,428 rows instead of 1,185. The per-voter files are kept
+# because they cannot be regenerated: deepseek-v4-pro will drift exactly as
+# deepseek-chat did. The revote subdirectories stay out, they are intermediate.
+!data/taxonomy/eligibility_v2/
+data/taxonomy/eligibility_v2/*
+!data/taxonomy/eligibility_v2/vote_FINAL.parquet
+!data/taxonomy/eligibility_v2/RUN_METADATA.md
+!data/taxonomy/eligibility_v2/mistral.parquet
+!data/taxonomy/eligibility_v2/google.parquet
+!data/taxonomy/eligibility_v2/deepseek.parquet
+
 # Coverage results and API resolution caches, minus the two PwC dumps (650 MB)
 !data/coverage/
 data/coverage/pwc/pwc_papers.parquet
